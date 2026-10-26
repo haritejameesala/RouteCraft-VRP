@@ -1,0 +1,18 @@
+{
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/.jj": true,
+        "**/.DS_Store": true,
+        "**/Thumbs.db": true,
+        "**/d:\\other_than_downloads\\DSA_PROJECT\\Algosmiths_106125071_106125069_106125071_Project\\Document\\RouteCraft_Report.aux": true,
+        "**/d:\\other_than_downloads\\DSA_PROJECT\\Algosmiths_106125071_106125069_106125071_Project\\Document\\RouteCraft_Report.log": true,
+        "**/d:\\other_than_downloads\\DSA_PROJECT\\Algosmiths_106125071_106125069_106125071_Project\\Document\\RouteCraft_Report.gz": true,
+        "**/d:\\other_than_downloads\\DSA_PROJECT\\Algosmiths_106125071_106125069_106125071_Project\\Document\\RouteCraft_Report.out": true,
+        "**/d:\\other_than_downloads\\DSA_PROJECT\\Algosmiths_106125071_106125069_106125071_Project\\Document\\RouteCraft_Flowchart.aux": true,
+        "**/d:\\other_than_downloads\\DSA_PROJECT\\Algosmiths_106125071_106125069_106125071_Project\\Document\\RouteCraft_Flowchart.log": true,
+        "**/d:\\other_than_downloads\\DSA_PROJECT\\Algosmiths_106125071_106125069_106125071_Project\\Document\\RouteCraft_Flowchart.gz": true,
+        "**/d:\\other_than_downloads\\DSA_PROJECT\\Algosmiths_106125071_106125069_106125071_Project\\Document\\RouteCraft_Flowchart.out": true
+    }
+}

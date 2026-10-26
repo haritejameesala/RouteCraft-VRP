@@ -1,0 +1,7 @@
+/build/
+*.class
+.java-classes
+/object/*.o
+/a.out
+/a.out.exe
+*.dll

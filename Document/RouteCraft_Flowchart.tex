@@ -1,0 +1,65 @@
+\begin{tikzpicture}[
+    node distance=0.45cm and 1.15cm,
+    process/.style={
+        rectangle,
+        rounded corners,
+        draw=black!70,
+        fill=blue!5,
+        align=center,
+        text width=5.0cm,
+        minimum height=0.75cm
+    },
+    decision/.style={
+        diamond,
+        aspect=2.1,
+        draw=black!70,
+        fill=yellow!15,
+        align=center,
+        text width=2.9cm,
+        inner sep=1pt
+    },
+    startstop/.style={
+        ellipse,
+        draw=black!70,
+        fill=green!10,
+        align=center,
+        minimum width=2.5cm,
+        minimum height=0.65cm
+    },
+    arrow/.style={-Stealth, thick}
+]
+\node[startstop] (start) {Start};
+\node[process, below=of start] (scenario) {Create scenario: depots, customers, demands, fleet size, capacity};
+\node[decision, below=of scenario] (osmchoice) {OSM road graph loaded?};
+\node[process, below left=of osmchoice] (osm) {Parse OSM XML; build directed road graph};
+\node[process, below=of osm] (scc) {Retain largest strongly connected component};
+\node[process, below right=of osmchoice] (fallback) {Use straight-line distance fallback};
+\node[process, below=1.2cm of scc] (validate) {Validate scenario and routing inputs};
+\node[process, below=of validate] (assign) {Assign customers to the nearest depot};
+\node[decision, below=of assign] (method) {Route construction method?};
+\node[process, below left=of method] (savings) {Clarke-Wright savings with capacity checks};
+\node[process, below right=of method] (nearest) {Capacity-aware nearest-neighbor construction};
+\node[process, below=1.1cm of savings] (improve) {Improve routes with 2-opt and 3-opt-lite};
+\node[process, below=of improve] (score) {Calculate distance, time, cost, and objective score};
+\node[process, below=of score] (display) {Display route manifest; report unserved customers or fleet excess};
+\node[process, below=of display] (actions) {Dispatch animation or export route CSV};
+\node[startstop, below=of actions] (finish) {Finish};
+
+\draw[arrow] (start) -- (scenario);
+\draw[arrow] (scenario) -- (osmchoice);
+\draw[arrow] (osmchoice) -- node[above left]{Yes} (osm);
+\draw[arrow] (osm) -- (scc);
+\draw[arrow] (osmchoice) -- node[above right]{No} (fallback);
+\draw[arrow] (scc.south) |- (validate.west);
+\draw[arrow] (fallback.south) |- (validate.east);
+\draw[arrow] (validate) -- (assign);
+\draw[arrow] (assign) -- (method);
+\draw[arrow] (method) -- node[above left]{Savings} (savings);
+\draw[arrow] (method) -- node[above right]{Nearest} (nearest);
+\draw[arrow] (savings.south) |- (improve.west);
+\draw[arrow] (nearest.south) |- (improve.east);
+\draw[arrow] (improve) -- (score);
+\draw[arrow] (score) -- (display);
+\draw[arrow] (display) -- (actions);
+\draw[arrow] (actions) -- (finish);
+\end{tikzpicture}

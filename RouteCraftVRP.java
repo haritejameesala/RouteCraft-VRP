@@ -34,7 +34,7 @@ public class RouteCraftVRP {
 
     private final List<Node> customers=new ArrayList<>(), depots=new ArrayList<>();
     private final Map<Long,RoadNode> roadNodes=new LinkedHashMap<>();
-    private final RouteOptimizer optimizer=new RouteOptimizer(roadNodes);
+    private final RouteOptimizerBridge optimizer=new RouteOptimizerBridge(roadNodes);
     // Public OpenStreetMap raster tiles are fetched only for the currently imported map extent.
     private final Map<String,BufferedImage> tileCache=new java.util.concurrent.ConcurrentHashMap<>();
     private final Set<String> tileRequests=java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -87,7 +87,7 @@ public class RouteCraftVRP {
     }
     private void launch(){
         JFrame f=new JFrame("ROUTECRAFT  /  Routing Intelligence");
-        f.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);f.setMinimumSize(new Dimension(1180,720));f.setSize(1600,1000);f.setExtendedState(JFrame.MAXIMIZED_BOTH);f.setLocationRelativeTo(null);
+        f.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);f.setMinimumSize(new Dimension(1180,720));f.setSize(1600,1000);f.setExtendedState(JFrame.MAXIMIZED_BOTH);f.setLocationRelativeTo(null);f.addWindowListener(new WindowAdapter(){public void windowClosing(WindowEvent e){optimizer.close();}});
         f.setContentPane(buildUI());f.setVisible(true);refreshMetrics();
     }
     private JPanel buildUI(){
@@ -212,7 +212,7 @@ public class RouteCraftVRP {
     }
     private JPanel metrics(){
         JPanel p=new JPanel(new GridLayout(1,4,11,0));p.setOpaque(false);
-        JPanel dm=card(13);dm.setLayout(new BorderLayout(0,7));dm.add(value("TOTAL DISTANCE",9,MUTED),BorderLayout.NORTH);dm.add(totalDistance,BorderLayout.CENTER);distanceUnit.setText(roadNetworkLoaded?"road kilometres":"map units");dm.add(distanceUnit,BorderLayout.SOUTH);dm.setPreferredSize(new Dimension(100,87));p.add(dm);p.add(metric("FLEET UTILIZATION","vehicles dispatched",vehiclesUsed,BRASS));p.add(metric("CUSTOMERS SERVED","delivery points",served,BLUE));p.add(metric("TOTAL DEMAND","units to deliver",totalDemand,VIOLET));return p;
+        JPanel dm=card(13);dm.setLayout(new BorderLayout(0,7));dm.add(value("TOTAL DISTANCE",9,MUTED),BorderLayout.NORTH);dm.add(totalDistance,BorderLayout.CENTER);distanceUnit.setText(distanceUnitLabel());dm.add(distanceUnit,BorderLayout.SOUTH);dm.setPreferredSize(new Dimension(100,87));p.add(dm);p.add(metric("FLEET UTILIZATION","vehicles dispatched",vehiclesUsed,BRASS));p.add(metric("CUSTOMERS SERVED","delivery points",served,BLUE));p.add(metric("TOTAL DEMAND","units to deliver",totalDemand,VIOLET));return p;
     }
     private JPanel metric(String t,String sub,JLabel v,Color c){JPanel p=card(13);p.setLayout(new BorderLayout(0,7));p.add(value(t,9,MUTED),BorderLayout.NORTH);v.setForeground(c);p.add(v,BorderLayout.CENTER);p.add(value(sub,10,MUTED),BorderLayout.SOUTH);p.setPreferredSize(new Dimension(100,87));return p;}
     private JPanel routeCard(){
@@ -303,24 +303,24 @@ public class RouteCraftVRP {
         for(int i=0;i<ways.getLength();i++){Element way=(Element)ways.item(i);Map<String,String> tags=new HashMap<>();NodeList children=way.getChildNodes();List<Long> refs=new ArrayList<>();for(int j=0;j<children.getLength();j++)if(children.item(j) instanceof Element){Element c=(Element)children.item(j);if(c.getTagName().equals("tag"))tags.put(c.getAttribute("k"),c.getAttribute("v"));else if(c.getTagName().equals("nd"))refs.add(Long.parseLong(c.getAttribute("ref")));}
             if(!roadTypes.contains(tags.get("highway"))||refs.size()<2||"no".equals(tags.get("access"))||"no".equals(tags.get("motor_vehicle")))continue;
             double speed=defaultSpeed(tags.get("highway"));try{String ms=tags.get("maxspeed");if(ms!=null){String digits=ms.replaceAll("[^0-9.]","");if(!digits.isEmpty())speed=Double.parseDouble(digits);if(ms.toLowerCase(Locale.ROOT).contains("mph"))speed*=1.60934;}}catch(Exception ignored){}speed=Math.max(5,Math.min(120,speed));boolean oneway="yes".equals(tags.get("oneway"))||"1".equals(tags.get("oneway"))||"-1".equals(tags.get("oneway"));boolean reverse="-1".equals(tags.get("oneway"));double toll=("yes".equals(tags.get("toll"))?20.0:0.0);
-            for(int j=0;j<refs.size()-1;j++){RoadNode a=nodes.get(refs.get(j)),b=nodes.get(refs.get(j+1));if(a==null||b==null)continue;double km=RouteOptimizer.geoKm(a.lat,a.lon,b.lat,b.lon);if(km<=0)continue;double minutes=km/speed*60;double cost=km*12+toll;if(reverse)b.edges.add(new RoadEdge(a,km,minutes,cost));else{a.edges.add(new RoadEdge(b,km,minutes,cost));if(!oneway)b.edges.add(new RoadEdge(a,km,minutes,cost));}edges++;}}
+            for(int j=0;j<refs.size()-1;j++){RoadNode a=nodes.get(refs.get(j)),b=nodes.get(refs.get(j+1));if(a==null||b==null)continue;double km=RouteOptimizerBridge.geoKm(a.lat,a.lon,b.lat,b.lon);if(km<=0)continue;double minutes=km/speed*60;double cost=km*12+toll;if(reverse)b.edges.add(new RoadEdge(a,km,minutes,cost));else{a.edges.add(new RoadEdge(b,km,minutes,cost));if(!oneway)b.edges.add(new RoadEdge(a,km,minutes,cost));}edges++;}}
         if(edges==0)throw new IOException("No routable highway edges found in this OSM extract.");
         roadNodes.clear();
-        Set<RoadNode> usedRoadNodes=new HashSet<>();
         for(RoadNode roadNode:nodes.values()){
             if(!roadNode.edges.isEmpty()){
-                usedRoadNodes.add(roadNode);
-                for(RoadEdge edge:roadNode.edges)usedRoadNodes.add(edge.to);
+                roadNodes.put(roadNode.id,roadNode);
+                for(RoadEdge edge:roadNode.edges)roadNodes.put(edge.to.id,edge.to);
             }
         }
-        RouteOptimizer.retainLargestStronglyConnectedComponent(usedRoadNodes);
-        for(RoadNode roadNode:usedRoadNodes)roadNodes.put(roadNode.id,roadNode);
+        optimizer.setRoadGraph(roadNodes);
+        Set<RoadNode> usedRoadNodes=new HashSet<>(roadNodes.values());
         fitRoadNetworkCoordinates(usedRoadNodes);
+        optimizer.setRoadGraph(roadNodes);
         roadNetworkLoaded=true;
         optimizer.setRoadNetworkLoaded(true);
         roadNetworkName=file.getName();
         roadNetworkPath=file.getAbsolutePath();
-        distanceUnit.setText("road kilometres");
+        distanceUnit.setText(distanceUnitLabel());
         for(Node customer:customers){RoadNode snap=optimizer.nearestRoadNode(customer.x,customer.y);if(snap!=null){customer.x=snap.x;customer.y=snap.y;}}
         for(Node depot:depots){RoadNode snap=optimizer.nearestRoadNode(depot.x,depot.y);if(snap!=null){depot.x=snap.x;depot.y=snap.y;}}
         optimizer.clearCache();routes.clear();routeProgress=new double[0];pauseAnimation();roadStatus.setText("OSM: "+roadNodes.size()+" nodes · "+edges+" road links");roadStatus.setForeground(JADE);map.fit();map.repaint();refreshMetrics();renderRoutes();loadMapTilesAsync();
@@ -417,8 +417,27 @@ public class RouteCraftVRP {
         }
     }
     private static double defaultSpeed(String highway){if(highway==null)return 30;switch(highway){case "motorway":return 90;case "trunk":return 70;case "primary":return 55;case "secondary":return 45;case "tertiary":return 35;case "residential":case "living_street":return 20;default:return 30;}}
-    private void refreshMetrics(){double d=0;for(Route r:routes)d+=optimizer.routeKm(r.depot,r.stops);totalDistance.setText(routes.isEmpty()?"—":fmt(d));vehiclesUsed.setText(routes.isEmpty()?"—":routes.size()+" / "+vehicleCount);vehiclesUsed.setForeground(routes.size()>vehicleCount?ROSE:BRASS);served.setText(routes.isEmpty()?"0 / "+customers.size():routes.stream().mapToInt(r->r.stops.size()).sum()+" / "+customers.size());totalDemand.setText(String.valueOf(customers.stream().mapToInt(n->n.demand).sum()));}
-    private void renderRoutes(){StringBuilder b=new StringBuilder();for(int i=0;i<routes.size();i++){Route r=routes.get(i);b.append(String.format(Locale.US,"V%-2d   %-3s",i+1,r.depot.name));for(Node n:r.stops)b.append("  →  C").append(n.id);b.append("  →  ").append(r.depot.name).append(String.format(Locale.US,"     LOAD %d/%d     %.2f km · %.1f min · ₹%.0f · score %.2f%n",r.load(),capacity,optimizer.routeKm(r.depot,r.stops),optimizer.routeMinutes(r.depot,r.stops),optimizer.routeCost(r.depot,r.stops),optimizer.routeDistance(r.depot,r.stops)));}if(routes.isEmpty())b.append("No routes computed yet.");routeOutput.setText(b.toString());routeOutput.setCaretPosition(0);}
+    private void refreshMetrics(){distanceUnit.setText(distanceUnitLabel());double d=0;for(Route r:routes)d+=optimizer.routeKm(r.depot,r.stops);totalDistance.setText(routes.isEmpty()?"—":fmt(d));vehiclesUsed.setText(routes.isEmpty()?"—":routes.size()+" / "+vehicleCount);vehiclesUsed.setForeground(routes.size()>vehicleCount?ROSE:BRASS);served.setText(routes.isEmpty()?"0 / "+customers.size():routes.stream().mapToInt(r->r.stops.size()).sum()+" / "+customers.size());totalDemand.setText(String.valueOf(customers.stream().mapToInt(n->n.demand).sum()));}
+    static String distanceUnitLabel(boolean roadNetworkLoaded){return roadNetworkLoaded?"km (OSM road distance)":"map units (no scale)";}
+    private String distanceUnitLabel(){return distanceUnitLabel(roadNetworkLoaded);}
+    private void renderRoutes(){
+        StringBuilder b=new StringBuilder();
+        String distanceUnits=roadNetworkLoaded?"km":"map units";
+        String costLabel=roadNetworkLoaded?"₹":"cost units ";
+        for(int i=0;i<routes.size();i++){
+            Route r=routes.get(i);
+            b.append(String.format(Locale.US,"V%-2d   %-3s",i+1,r.depot.name));
+            for(Node n:r.stops)b.append("  →  C").append(n.id);
+            b.append("  →  ").append(r.depot.name).append(String.format(
+                Locale.US,"     LOAD %d/%d     %.2f %s · %.1f estimated min · %s%.0f · score %.2f%n",
+                r.load(),capacity,optimizer.routeKm(r.depot,r.stops),distanceUnits,
+                optimizer.routeMinutes(r.depot,r.stops),costLabel,optimizer.routeCost(r.depot,r.stops),
+                optimizer.routeDistance(r.depot,r.stops)));
+        }
+        if(routes.isEmpty())b.append("No routes computed yet.");
+        routeOutput.setText(b.toString());
+        routeOutput.setCaretPosition(0);
+    }
     private void startAnimation(){
         if(routes.isEmpty()){message("Optimize routes before dispatching vehicles.");return;}
         if(routeProgress.length!=routes.size())routeProgress=new double[routes.size()];
@@ -486,13 +505,13 @@ public class RouteCraftVRP {
         }catch(Exception ignored){}}
         weightDistance=wd;weightTime=wt;weightCost=wc;optimizer.setWeights(wd,wt,wc);weightDistanceSlider.setValue((int)Math.round(wd*100));weightTimeSlider.setValue((int)Math.round(wt*100));weightCostSlider.setValue((int)Math.round(wc*100));optimizer.clearCache();
         if(depots.isEmpty())depots.add(new Node(1,"D1",50,50,0,true));
-        if(!restoredPath.isEmpty()&&new File(restoredPath).isFile()){try{loadOsm(new File(restoredPath));}catch(Exception ex){roadNetworkLoaded=false;optimizer.setRoadNetworkLoaded(false);roadNodes.clear();roadStatus.setText("OSM FILE UNAVAILABLE");roadStatus.setForeground(ROSE);}}
-        else{roadNetworkLoaded=false;optimizer.setRoadNetworkLoaded(false);roadNodes.clear();roadNetworkPath="";distanceUnit.setText("map units");roadStatus.setText("ROAD GRAPH: NOT LOADED");roadStatus.setForeground(ROSE);}
+        if(!restoredPath.isEmpty()&&new File(restoredPath).isFile()){try{loadOsm(new File(restoredPath));}catch(Exception ex){roadNetworkLoaded=false;optimizer.setRoadGraph(roadNodes);optimizer.setRoadNetworkLoaded(false);roadNodes.clear();roadStatus.setText("OSM FILE UNAVAILABLE");roadStatus.setForeground(ROSE);}}
+        else{roadNetworkLoaded=false;roadNodes.clear();optimizer.setRoadGraph(roadNodes);optimizer.setRoadNetworkLoaded(false);roadNetworkPath="";distanceUnit.setText(distanceUnitLabel());roadStatus.setText("ROAD GRAPH: NOT LOADED");roadStatus.setForeground(ROSE);}
         pauseAnimation();routeProgress=new double[0];refreshLists();refreshMetrics();map.repaint();renderRoutes();
     }
     private void saveScenario(){JFileChooser c=new JFileChooser();c.setSelectedFile(new java.io.File("routecraft-scenario.csv"));if(c.showSaveDialog(null)==JFileChooser.APPROVE_OPTION)try{java.nio.file.Files.writeString(c.getSelectedFile().toPath(),serializeScenario(),java.nio.charset.StandardCharsets.UTF_8);setStatus("SCENARIO SAVED");}catch(Exception ex){message("Save failed: "+ex.getMessage());}}
     private void loadScenario(){JFileChooser c=new JFileChooser();if(c.showOpenDialog(null)==JFileChooser.APPROVE_OPTION)try{pushUndo();restoreScenario(java.nio.file.Files.readString(c.getSelectedFile().toPath(),java.nio.charset.StandardCharsets.UTF_8));setStatus("SCENARIO LOADED");}catch(Exception ex){message("Load failed: "+ex.getMessage());}}
-    private void exportRoutes(){if(routes.isEmpty()){message("Optimize routes before exporting.");return;}JFileChooser c=new JFileChooser();c.setSelectedFile(new java.io.File("route-plan.csv"));if(c.showSaveDialog(null)==JFileChooser.APPROVE_OPTION)try{StringBuilder b=new StringBuilder("vehicle,depot,stop_order,customer_id,x,y,demand,route_load,route_km,route_minutes,route_cost,objective_score\n");for(int i=0;i<routes.size();i++){Route r=routes.get(i);int k=1;for(Node n:r.stops)b.append("V").append(i+1).append(',').append(r.depot.name).append(',').append(k++).append(',').append(n.id).append(',').append(fmt(n.x)).append(',').append(fmt(n.y)).append(',').append(n.demand).append(',').append(r.load()).append(',').append(fmt(optimizer.routeKm(r.depot,r.stops))).append(',').append(fmt(optimizer.routeMinutes(r.depot,r.stops))).append(',').append(fmt(optimizer.routeCost(r.depot,r.stops))).append(',').append(fmt(optimizer.routeDistance(r.depot,r.stops))).append('\n');}java.nio.file.Files.writeString(c.getSelectedFile().toPath(),b.toString(),java.nio.charset.StandardCharsets.UTF_8);setStatus("ROUTES EXPORTED");}catch(Exception ex){message("Export failed: "+ex.getMessage());}}
+    private void exportRoutes(){if(routes.isEmpty()){message("Optimize routes before exporting.");return;}JFileChooser c=new JFileChooser();c.setSelectedFile(new java.io.File("route-plan.csv"));if(c.showSaveDialog(null)==JFileChooser.APPROVE_OPTION)try{StringBuilder b=new StringBuilder("vehicle,depot,stop_order,customer_id,x,y,demand,route_load,route_distance,distance_unit,estimated_minutes,estimated_cost,objective_score\n");for(int i=0;i<routes.size();i++){Route r=routes.get(i);int k=1;for(Node n:r.stops)b.append("V").append(i+1).append(',').append(r.depot.name).append(',').append(k++).append(',').append(n.id).append(',').append(fmt(n.x)).append(',').append(fmt(n.y)).append(',').append(n.demand).append(',').append(r.load()).append(',').append(fmt(optimizer.routeKm(r.depot,r.stops))).append(',').append(roadNetworkLoaded?"km":"map units").append(',').append(fmt(optimizer.routeMinutes(r.depot,r.stops))).append(',').append(fmt(optimizer.routeCost(r.depot,r.stops))).append(',').append(fmt(optimizer.routeDistance(r.depot,r.stops))).append('\n');}java.nio.file.Files.writeString(c.getSelectedFile().toPath(),b.toString(),java.nio.charset.StandardCharsets.UTF_8);setStatus("ROUTES EXPORTED");}catch(Exception ex){message("Export failed: "+ex.getMessage());}}
     private void editSelectedCustomer(){int i=customersList.getSelectedIndex();if(i<0){message("Select a customer first.");return;}Node n=customers.get(i);JSpinner x=spin(n.x,0.0,100.0,1.0),y=spin(n.y,0.0,100.0,1.0),d=spin(n.demand,1,100,1);JPanel p=new JPanel(new GridLayout(3,2,8,8));p.add(new JLabel("X coordinate"));p.add(x);p.add(new JLabel("Y coordinate"));p.add(y);p.add(new JLabel("Demand"));p.add(d);if(JOptionPane.showConfirmDialog(null,p,"Edit customer C"+n.id,JOptionPane.OK_CANCEL_OPTION)==JOptionPane.OK_OPTION){pushUndo();n.x=(Double)x.getValue();n.y=(Double)y.getValue();n.demand=(Integer)d.getValue();invalidateRoutes();refreshLists();refreshMetrics();map.repaint();setStatus("CUSTOMER UPDATED · UNDO AVAILABLE");}}
     private void setStatus(String s){status.setText(s);}
     private void message(String s){JOptionPane.showMessageDialog(null,s,"RouteCraft",JOptionPane.INFORMATION_MESSAGE);}
