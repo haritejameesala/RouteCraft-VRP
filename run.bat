@@ -7,7 +7,7 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-javac -encoding UTF-8 RouteCraftVRP.java
+javac -encoding UTF-8 RouteCraftVRP.java RouteOptimizer.java
 if errorlevel 1 (
   echo.
   echo Compilation failed. Review the errors above.

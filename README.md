@@ -31,7 +31,7 @@ A Java Swing desktop app that solves the **Capacitated Multi-Depot Vehicle Routi
 **macOS / Linux:**
 
 ```bash
-javac -encoding UTF-8 RouteCraftVRP.java
+javac -encoding UTF-8 RouteCraftVRP.java RouteOptimizer.java
 java RouteCraftVRP
 ```
 
@@ -60,7 +60,7 @@ java RouteCraftVRP
 - **Road graph:** highways usable by motor vehicles are read from the OSM file, with one-way, `maxspeed` and toll tags respected. Only the **largest strongly connected component** is kept, so every stop can reach every other. Disconnected fragments (service stubs, clipped highway ends) are discarded.
 - **Snapping:** customers and depots snap to the nearest node in that connected network. The 0–100 X/Y values in the side panel are relative positions within the road network's bounding box.
 - **Costs:** each edge has distance, travel time (OSM speed tag or road-class default) and cost (₹12 per km, plus a toll surcharge). The objective score is the weighted sum set by the sliders.
-- **Solvers:** a constructive heuristic (savings or nearest neighbor) builds the routes, then 2-opt and a light 3-opt pass improve each route.
+- **Solvers:** `RouteOptimizer.java` contains the route data models and DSA algorithms: Clarke–Wright savings, nearest neighbor, 2-opt, a light 3-opt pass, weighted Dijkstra shortest paths, and Kosaraju's strongly connected component filter. `RouteCraftVRP.java` contains the Swing interface, OSM import and map rendering.
 
 ## Notes and limitations
 
@@ -74,10 +74,16 @@ java RouteCraftVRP
 
 ```
 RouteCraft_Ultimate/
-├── RouteCraftVRP.java   # entire application (UI, solvers, OSM import, map rendering)
+├── RouteCraftVRP.java   # Swing interface, OSM import and map rendering
+├── RouteOptimizer.java  # DSA models and routing algorithms
+├── DSA_EXPLANATION.md   # DSA overview and presentation guide
 ├── run.bat              # Windows build-and-run script
 └── README.md
 ```
+
+Both Java source files are compiled together by `run.bat`. The optimizer is
+kept separate from the interface so its algorithms can be read and explained
+independently.
 
 ## Credits
 
