@@ -208,15 +208,23 @@ Provides the desktop interface, user interaction, map display, scenario manageme
 
 Transfers graph and routing data between Java and C++. It exposes native functionality to the interface and converts native results into Java-side models.
 
-**C++ routing engine — `RouteOptimizer.cpp`**
+**Route construction — `RouteConstructionAlgorithms.cpp`**
 
-Implements route construction, local search, shortest-path calculations, graph connectivity processing, and routing metrics.
+Assigns customers to depots and builds capacity-aware routes using nearest neighbor or Clarke–Wright savings. It also merges routes to fit the fleet.
+
+**Route improvement and metrics — `RouteImprovementAlgorithms.cpp`**
+
+Validates optimization inputs, scores routes, calculates distance/time/cost metrics, and improves stop order with 2-opt and 3-opt-lite.
 
 **C++ data models — `RouteObjects.cpp`**
 
 Implements the native model methods used by the routing engine.
 
-**JNI adapter — `RouteOptimizerJni.cpp`**
+**Road-network algorithms — `RoadNetworkAlgorithms.cpp`**
+
+Implements nearest road-node lookup, weighted Dijkstra shortest paths, largest strongly connected component filtering, and geographic distance calculation.
+
+**JNI adapter — `integration/jni/RouteOptimizerJni.cpp`**
 
 Exposes C++ operations to Java through native method bindings.
 
@@ -398,21 +406,29 @@ RouteCraft/
 ├── RouteOptimizerBridge.java
 ├── RouteOptimizerBridgeTest.java
 │
-├── include/
+├── include/                         # DSA declarations only
 │   ├── RouteObjects.h
 │   ├── RouteOptimizer.h
-│   └── RouteOptimizerJni.h
+│   └── RoadNetworkAlgorithms.h
 │
-├── source/
+├── source/                          # DSA implementation and native tests only
 │   ├── RouteObjects.cpp
-│   ├── RouteOptimizer.cpp
-│   ├── RouteOptimizerJni.cpp
+│   ├── RouteConstructionAlgorithms.cpp
+│   ├── RouteImprovementAlgorithms.cpp
+│   ├── RoadNetworkAlgorithms.cpp
 │   └── RouteCraftDsaTests.cpp
+│
+├── integration/
+│   └── jni/
+│       ├── RouteOptimizerJni.h
+│       └── RouteOptimizerJni.cpp
 │
 ├── object/
 │   ├── RouteCraftDsaTests.o
 │   ├── RouteObjects.o
-│   ├── RouteOptimizer.o
+│   ├── RouteConstructionAlgorithms.o
+│   ├── RouteImprovementAlgorithms.o
+│   ├── RoadNetworkAlgorithms.o
 │   └── RouteOptimizerJni.o
 │
 ├── build/
@@ -439,10 +455,13 @@ RouteCraft/
 | `RouteOptimizerBridgeTest.java` | Java/JNI integration tests |
 | `RouteObjects.h` | C++ model declarations |
 | `RouteObjects.cpp` | C++ model implementations |
-| `RouteOptimizer.h` | Routing-engine declarations |
-| `RouteOptimizer.cpp` | DSA algorithms and optimization logic |
-| `RouteOptimizerJni.h` | JNI interface declarations |
-| `RouteOptimizerJni.cpp` | Native method implementations |
+| `RouteOptimizer.h` | Shared route-optimizer declarations |
+| `RouteConstructionAlgorithms.cpp` | Depot assignment, nearest-neighbor and savings construction, capacity, and fleet merges |
+| `RouteImprovementAlgorithms.cpp` | Objective scoring, route metrics, input validation, 2-opt, and 3-opt-lite |
+| `RoadNetworkAlgorithms.h` | Road-graph algorithm declarations |
+| `RoadNetworkAlgorithms.cpp` | Dijkstra, strongly connected components, and geographic distance |
+| `integration/jni/RouteOptimizerJni.h` | JNI interface declarations |
+| `integration/jni/RouteOptimizerJni.cpp` | Java-to-native integration methods |
 | `RouteCraftDsaTests.cpp` | Native algorithm tests |
 | `Makefile` | Build and test automation |
 | `run.bat` | Windows build and launch script |
@@ -452,6 +471,16 @@ RouteCraft/
 | `Video/Project_Video_Instructions.md` | Video preparation instructions |
 
 The compiled artifacts in `object/`, `build/`, and `a.out` are generated files. They may be recreated from the source code using the appropriate build commands.
+
+### DSA split for three presenters
+
+The three algorithm modules are similar in implementation size (about 230–250 lines each) and can be presented as three member assignments:
+
+1. **Member 1 — Route construction:** `RouteConstructionAlgorithms.cpp` covers nearest-depot assignment, capacity-aware nearest-neighbor routing, Clarke–Wright savings, endpoint-compatible merges, and reducing routes to the fleet limit.
+2. **Member 2 — Route improvement and evaluation:** `RouteImprovementAlgorithms.cpp` covers input checks, the weighted objective, round-trip metrics, and 2-opt/3-opt-lite route improvements.
+3. **Member 3 — Road-network algorithms:** `RoadNetworkAlgorithms.cpp` covers nearest-road-node search, Dijkstra shortest paths, Kosaraju strongly connected components, and haversine distance.
+
+`RouteObjects.h`/`RouteObjects.cpp` provide shared data structures used by all three parts. `RouteOptimizer.h` provides their shared interface. The JNI adapter is integration code, not a DSA module, so it remains under `integration/jni/`.
 
 ---
 

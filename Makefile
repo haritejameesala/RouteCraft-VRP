@@ -19,8 +19,10 @@ OBJECT_DIR := object
 
 CORE_SOURCES := \
     $(SOURCE_DIR)/RouteObjects.cpp \
-    $(SOURCE_DIR)/RouteOptimizer.cpp
-JNI_SOURCE := $(SOURCE_DIR)/RouteOptimizerJni.cpp
+    $(SOURCE_DIR)/RouteConstructionAlgorithms.cpp \
+    $(SOURCE_DIR)/RouteImprovementAlgorithms.cpp \
+    $(SOURCE_DIR)/RoadNetworkAlgorithms.cpp
+JNI_SOURCE := integration/jni/RouteOptimizerJni.cpp
 
 CORE_OBJECTS := $(patsubst $(SOURCE_DIR)/%.cpp,$(OBJECT_DIR)/%.o,$(CORE_SOURCES))
 JNI_OBJECT := $(OBJECT_DIR)/RouteOptimizerJni.o
@@ -44,6 +46,9 @@ build:
 	mkdir -p $@
 
 $(OBJECT_DIR)/%.o: $(SOURCE_DIR)/%.cpp | $(OBJECT_DIR)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(JNI_CPPFLAGS) -c $< -o $@
+
+$(JNI_OBJECT): $(JNI_SOURCE) | $(OBJECT_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(JNI_CPPFLAGS) -c $< -o $@
 
 a.out: $(APP_OBJECT) $(CORE_OBJECTS)

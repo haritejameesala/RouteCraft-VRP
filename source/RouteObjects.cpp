@@ -1,3 +1,5 @@
+// File purpose: Implements constructors and helpers for the shared DSA data types.
+// DSA part: Shared support used by Parts 1, 2, and 3.
 #include "RouteObjects.h"
 
 #include <utility>
@@ -12,11 +14,6 @@ Node::Node(int id, string name, double x, double y, int demand, bool isDepot)
       y(y),
       demand(demand),
       isDepot(isDepot) {}
-
-// Produces the display text used for a depot or customer.
-string Node::label() const {
-    return isDepot ? name : "C" + to_string(id);
-}
 
 // Totals the demand of every customer assigned to this route.
 int Route::load() const {

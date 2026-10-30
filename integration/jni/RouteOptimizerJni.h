@@ -1,3 +1,5 @@
+// File purpose: Declares the JNI methods that expose the native optimizer to Java.
+// DSA part: Integration support; not assigned to Parts 1, 2, or 3.
 #ifndef ROUTE_OPTIMIZER_JNI_H
 #define ROUTE_OPTIMIZER_JNI_H
 

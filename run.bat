@@ -41,7 +41,9 @@ if errorlevel 1 (
 if not exist build mkdir build
 "%CXX%" -std=c++17 -O2 -Wall -Wextra -Wpedantic -shared ^
   -I include -I "%JAVA_HOME%\include" -I "%JAVA_HOME%\include\win32" ^
-  source\RouteObjects.cpp source\RouteOptimizer.cpp source\RouteOptimizerJni.cpp ^
+  source\RouteObjects.cpp source\RouteConstructionAlgorithms.cpp ^
+  source\RouteImprovementAlgorithms.cpp source\RoadNetworkAlgorithms.cpp ^
+  integration\jni\RouteOptimizerJni.cpp ^
   -o build\RouteCraftDsa.dll
 if errorlevel 1 (
   echo.

@@ -1,3 +1,5 @@
+// File purpose: Declares the shared route, location, and road-graph data types.
+// DSA part: Shared support used by Parts 1, 2, and 3.
 #ifndef ROUTE_OBJECTS_H
 #define ROUTE_OBJECTS_H
 
@@ -19,8 +21,6 @@ struct Node {
 
     // Initializes a location and its routing attributes.
     Node(int id, std::string name, double x, double y, int demand, bool isDepot);
-    // Returns a depot's name or a generated customer label.
-    std::string label() const;
 };
 
 // One vehicle's trip: its starting depot followed by its customer stops.

@@ -1,3 +1,5 @@
+// File purpose: Converts JNI calls and Java data into native optimizer operations.
+// DSA part: Integration support; not assigned to Parts 1, 2, or 3.
 #include "RouteOptimizerJni.h"
 
 #include "RouteOptimizer.h"

@@ -1,3 +1,5 @@
+// File purpose: Tests route construction, route metrics, graph connectivity, and validation.
+// DSA part: Shared tests covering Parts 1, 2, and 3.
 #include "RouteOptimizer.h"
 
 #include <cmath>

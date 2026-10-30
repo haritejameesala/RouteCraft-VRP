@@ -1,9 +1,10 @@
+// File purpose: Declares the optimizer interface used by the route and graph modules.
+// DSA part: Shared interface used by Parts 1, 2, and 3.
 #ifndef ROUTE_OPTIMIZER_H
 #define ROUTE_OPTIMIZER_H
 
 #include "RouteObjects.h"
 
-#include <cstddef>
 #include <memory>
 #include <set>
 #include <string>
@@ -81,14 +82,6 @@ private:
                        std::vector<std::shared_ptr<Node>> stops);
     };
 
-    // Holds a graph vertex and next-edge index for iterative depth-first search.
-    struct TraversalFrame {
-        std::shared_ptr<RoadNode> node;  // Vertex currently being traversed.
-        std::size_t nextEdge;            // Next outgoing edge to inspect.
-
-        explicit TraversalFrame(std::shared_ptr<RoadNode> node);
-    };
-
     std::unordered_map<long long, std::shared_ptr<RoadNode>>& roadNodes;  // Input road graph.
     std::unordered_map<std::string, Leg> legCache;                        // Reused leg results.
     double weightDistance = 0.40;  // Contribution of distance to the score.
@@ -134,9 +127,6 @@ private:
     void twoOpt(Route& route);
     // Tries a limited set of three-opt-style segment reversals.
     void threeOptLite(Route& route);
-    // Finds a shortest weighted path through the road graph using Dijkstra's algorithm.
-    Leg shortestLeg(const std::shared_ptr<RoadNode>& start,
-                    const std::shared_ptr<RoadNode>& target);
 };
 
 #endif
