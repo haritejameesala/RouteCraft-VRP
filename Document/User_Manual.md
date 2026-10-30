@@ -1,48 +1,36 @@
-# RouteCraft User Manual
+# RouteCraft – User Manual
 
-RouteCraft creates capacity-constrained delivery routes from one or more depots.
-It can use a simple coordinate map or an OpenStreetMap (OSM) road network.
+## 1. Start the Application
+- Install JDK 17 or later and a C++17 compiler.
+- Set the `JAVA_HOME` environment variable.
+- Run `run.bat` to start the application.
 
-## Start the application
+## 2. Add Locations
+- Add depots and customers using the side panel.
+- Enter each customer's demand.
+- Optionally, load an `.osm` file to use real road networks.
 
-On Windows, install a 64-bit JDK 17+ and a 64-bit C++17 compiler, set
-`JAVA_HOME`, then double-click `run.bat`. To use saved OSM roads, download a
-small `.osm` XML extract; `.pbf` files are not supported. Without an OSM file,
-the application uses straight-line map distances.
+## 3. Set Vehicle Details
+- Enter the number of vehicles and their capacity.
+- Customers whose demand exceeds vehicle capacity cannot be served.
 
-## Plan and dispatch routes
+## 4. Optimize Routes
+- Select **Clarke-Wright Savings** or **Nearest Neighbor**.
+- Click **OPTIMIZE ROUTES**.
+- Review the routes, vehicle loads, distances, and customers served.
 
-1. Optionally choose **LOAD REAL MAP + OSM ROADS**, select an `.osm` file, and
-   choose **FIT MAP** to frame the retained road network.
-2. Add depots and customers with the side-panel controls, or choose **Place
-   customer** / **Place depot** and click on the map. Set each customer's
-   demand.
-3. Set the vehicle count and capacity. A customer whose demand exceeds the
-   capacity cannot be assigned.
-4. Choose Clarke-Wright savings or nearest neighbor, then select
-   **OPTIMIZE ROUTES**. Check the served-customer and fleet counts; the status
-   reports if the fleet or capacity is insufficient.
-5. Review route loads, distances, estimated times, and costs in the route
-   manifest. Select **DISPATCH** to animate the vehicles. Use **PAUSE** or the
-   speed and vehicle controls as needed.
-6. Select **EXPORT CSV** to save the current route plan. Use undo/redo to
-   restore recent scenario changes.
+## 5. Dispatch Vehicles
+- Click **DISPATCH** to animate the vehicles.
+- Use **PAUSE** and the speed controls to manage the simulation.
 
-## Notes and troubleshooting
+## 6. Export Routes
+- Click **EXPORT CSV** to save the route plan.
+- Use Undo and Redo to reverse or restore recent changes.
 
-- Map tiles require internet access; routing on a loaded OSM graph works
-  offline. Tile availability depends on the OpenStreetMap tile service.
-- Distances are in kilometres only when an OSM road network is loaded.
-  Coordinate-only routes have no real-world map scale and are reported in
-  map units, not kilometres.
-- Travel time and cost are estimates using static road speeds and the
-  application's fixed model; without OSM roads they are synthetic estimates,
-  not live-traffic estimates or currency quotes.
-- If startup reports that the native library cannot be loaded, verify that
-  `JAVA_HOME` points to a 64-bit JDK and that the C++ compiler has the same
-  architecture, then run `run.bat` again.
-- If OSM loading fails, use a small valid XML road extract and check that it
-  contains routable highway ways.
+## 7. Important Notes
+- Internet access is required to load map tiles.
+- Without an OSM road network, distances are shown in map units, not kilometres.
+- Travel times and costs are estimates, not live traffic data or actual prices.
+- If the application fails to start or load a map, check the installation requirements and OSM file format.
 
-For build instructions and tests, see the project `README.md`. For design,
-implementation details, and references, see `RouteCraft_Report.tex`.
+For more details, see `README.md`.

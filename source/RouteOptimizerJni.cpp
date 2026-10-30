@@ -10,8 +10,11 @@
 #include <utility>
 #include <vector>
 
+using namespace std;
+
 namespace {
 
+// Owns one optimizer and the road graph it references for a Java engine handle.
 struct NativeState {
     std::unordered_map<long long, std::shared_ptr<RoadNode>> roadNodes;
     RouteOptimizer optimizer;
@@ -19,6 +22,7 @@ struct NativeState {
     NativeState() : optimizer(roadNodes) {}
 };
 
+// Raises a Java exception unless JNI has already reported one.
 void throwJava(JNIEnv* env, const char* className, const std::string& message) {
     if (env->ExceptionCheck()) {
         return;
@@ -30,27 +34,34 @@ void throwJava(JNIEnv* env, const char* className, const std::string& message) {
     }
 }
 
+// Converts the opaque Java long handle and reports use-after-close to Java.
 NativeState* getState(JNIEnv* env, jlong handle) {
     auto* state = reinterpret_cast<NativeState*>(static_cast<intptr_t>(handle));
     if (state == nullptr) {
-        throwJava(env, "java/lang/IllegalStateException", "The native routing engine is closed.");
+        throwJava(
+            env, "java/lang/IllegalStateException",
+            "The native routing engine is closed.");
     }
     return state;
 }
 
+// Checks that an input array exists and has the expected number of elements.
 template <typename T>
 bool hasLength(JNIEnv* env, jarray array, jsize expected, const char* name) {
     if (array == nullptr) {
-        throwJava(env, "java/lang/IllegalArgumentException", std::string(name) + " must not be null.");
+        throwJava(env, "java/lang/IllegalArgumentException",
+                  std::string(name) + " must not be null.");
         return false;
     }
     if (env->GetArrayLength(array) != expected) {
-        throwJava(env, "java/lang/IllegalArgumentException", std::string(name) + " has an invalid length.");
+        throwJava(env, "java/lang/IllegalArgumentException",
+                  std::string(name) + " has an invalid length.");
         return false;
     }
     return true;
 }
 
+// Copies a Java int array into native storage.
 std::vector<jint> readInts(JNIEnv* env, jintArray array) {
     jsize length = env->GetArrayLength(array);
     std::vector<jint> values(static_cast<size_t>(length));
@@ -60,6 +71,7 @@ std::vector<jint> readInts(JNIEnv* env, jintArray array) {
     return values;
 }
 
+// Copies a Java long array into native storage.
 std::vector<jlong> readLongs(JNIEnv* env, jlongArray array) {
     jsize length = env->GetArrayLength(array);
     std::vector<jlong> values(static_cast<size_t>(length));
@@ -69,6 +81,7 @@ std::vector<jlong> readLongs(JNIEnv* env, jlongArray array) {
     return values;
 }
 
+// Copies a Java double array into native storage.
 std::vector<jdouble> readDoubles(JNIEnv* env, jdoubleArray array) {
     jsize length = env->GetArrayLength(array);
     std::vector<jdouble> values(static_cast<size_t>(length));
@@ -78,6 +91,7 @@ std::vector<jdouble> readDoubles(JNIEnv* env, jdoubleArray array) {
     return values;
 }
 
+// Copies a Java boolean array into native storage.
 std::vector<jboolean> readBooleans(JNIEnv* env, jbooleanArray array) {
     jsize length = env->GetArrayLength(array);
     std::vector<jboolean> values(static_cast<size_t>(length));
@@ -87,9 +101,11 @@ std::vector<jboolean> readBooleans(JNIEnv* env, jbooleanArray array) {
     return values;
 }
 
+// Copies a non-null Java string while releasing the JNI character buffer.
 std::string readString(JNIEnv* env, jstring value) {
     if (value == nullptr) {
-        throwJava(env, "java/lang/IllegalArgumentException", "Depot names must not contain null entries.");
+        throwJava(env, "java/lang/IllegalArgumentException",
+                  "Depot names must not contain null entries.");
         return {};
     }
     const char* chars = env->GetStringUTFChars(value, nullptr);
@@ -101,18 +117,22 @@ std::string readString(JNIEnv* env, jstring value) {
     return result;
 }
 
-std::shared_ptr<Node> makeNode(int id, double x, double y, bool isDepot, int demand = 0, std::string name = {}) {
+// Creates a routing node from coordinates and customer/depot attributes.
+std::shared_ptr<Node> makeNode(int id, double x, double y, bool isDepot,
+                               int demand = 0, std::string name = {}) {
     return std::make_shared<Node>(id, std::move(name), x, y, demand, isDepot);
 }
 
+// Validates Java route data, constructs its nodes, and computes the chosen metric.
 jdouble routeMetricValue(
     NativeState& state,
     const std::vector<jint>& ids,
     const std::vector<jboolean>& depotFlags,
     const std::vector<jdouble>& coordinates,
     jint metric) {
-    if (ids.empty() || ids.size() != depotFlags.size() || coordinates.size() != ids.size() * 2
-        || depotFlags[0] != JNI_TRUE || metric < 0 || metric > 3) {
+    if (ids.empty() || ids.size() != depotFlags.size() ||
+        coordinates.size() != ids.size() * 2 || depotFlags[0] != JNI_TRUE ||
+        metric < 0 || metric > 3) {
         throw std::invalid_argument("Route metric input is invalid.");
     }
 
@@ -123,7 +143,8 @@ jdouble routeMetricValue(
         if (depotFlags[i] == JNI_TRUE) {
             throw std::invalid_argument("Only the first route node may be a depot.");
         }
-        stops.push_back(makeNode(ids[i], coordinates[i * 2], coordinates[i * 2 + 1], false));
+        stops.push_back(
+            makeNode(ids[i], coordinates[i * 2], coordinates[i * 2 + 1], false));
     }
 
     switch (metric) {
@@ -140,20 +161,26 @@ jdouble routeMetricValue(
 
 }  // namespace
 
-JNIEXPORT jlong JNICALL Java_RouteOptimizerBridge_nativeCreate(JNIEnv* env, jclass) {
+// Allocates an optimizer state and exposes its address as an opaque Java handle.
+JNIEXPORT jlong JNICALL Java_RouteOptimizerBridge_nativeCreate(
+    JNIEnv* env, jclass) {
     try {
         auto state = std::make_unique<NativeState>();
         return static_cast<jlong>(reinterpret_cast<intptr_t>(state.release()));
     } catch (const std::bad_alloc&) {
-        throwJava(env, "java/lang/OutOfMemoryError", "Could not allocate the native routing engine.");
+        throwJava(env, "java/lang/OutOfMemoryError",
+                  "Could not allocate the native routing engine.");
         return 0;
     }
 }
 
-JNIEXPORT void JNICALL Java_RouteOptimizerBridge_nativeDestroy(JNIEnv*, jclass, jlong handle) {
+// Destroys the optimizer state previously allocated by nativeCreate.
+JNIEXPORT void JNICALL Java_RouteOptimizerBridge_nativeDestroy(
+    JNIEnv*, jclass, jlong handle) {
     delete reinterpret_cast<NativeState*>(static_cast<intptr_t>(handle));
 }
 
+// Updates the metric weights used by this optimizer instance.
 JNIEXPORT void JNICALL Java_RouteOptimizerBridge_nativeSetWeights(
     JNIEnv* env, jclass, jlong handle, jdouble distance, jdouble time, jdouble cost) {
     NativeState* state = getState(env, handle);
@@ -162,6 +189,7 @@ JNIEXPORT void JNICALL Java_RouteOptimizerBridge_nativeSetWeights(
     }
 }
 
+// Enables or disables road graph use for route legs.
 JNIEXPORT void JNICALL Java_RouteOptimizerBridge_nativeSetRoadNetworkLoaded(
     JNIEnv* env, jclass, jlong handle, jboolean loaded) {
     NativeState* state = getState(env, handle);
@@ -170,13 +198,17 @@ JNIEXPORT void JNICALL Java_RouteOptimizerBridge_nativeSetRoadNetworkLoaded(
     }
 }
 
-JNIEXPORT void JNICALL Java_RouteOptimizerBridge_nativeClearCache(JNIEnv* env, jclass, jlong handle) {
+// Invalidates cached route legs for this optimizer instance.
+JNIEXPORT void JNICALL Java_RouteOptimizerBridge_nativeClearCache(
+    JNIEnv* env, jclass, jlong handle) {
     NativeState* state = getState(env, handle);
     if (state != nullptr) {
         state->optimizer.clearCache();
     }
 }
 
+// Converts Java graph arrays to native nodes and edges, then retains the largest
+// strongly connected component and returns its node identifiers.
 JNIEXPORT jlongArray JNICALL Java_RouteOptimizerBridge_nativeSetRoadGraph(
     JNIEnv* env,
     jclass,
@@ -192,11 +224,12 @@ JNIEXPORT jlongArray JNICALL Java_RouteOptimizerBridge_nativeSetRoadGraph(
     }
 
     const jsize nodeCount = env->GetArrayLength(nodeIds);
-    const jsize edgeCount = edgeFrom == nullptr ? -1 : env->GetArrayLength(edgeFrom);
-    if (!hasLength<jdouble>(env, nodeValues, nodeCount * 4, "nodeValues")
-        || !hasLength<jint>(env, edgeFrom, edgeCount, "edgeFrom")
-        || !hasLength<jint>(env, edgeTo, edgeCount, "edgeTo")
-        || !hasLength<jdouble>(env, edgeValues, edgeCount * 3, "edgeValues")) {
+    const jsize edgeCount =
+        edgeFrom == nullptr ? -1 : env->GetArrayLength(edgeFrom);
+    if (!hasLength<jdouble>(env, nodeValues, nodeCount * 4, "nodeValues") ||
+        !hasLength<jint>(env, edgeFrom, edgeCount, "edgeFrom") ||
+        !hasLength<jint>(env, edgeTo, edgeCount, "edgeTo") ||
+        !hasLength<jdouble>(env, edgeValues, edgeCount * 3, "edgeValues")) {
         return nullptr;
     }
 
@@ -213,19 +246,23 @@ JNIEXPORT jlongArray JNICALL Java_RouteOptimizerBridge_nativeSetRoadGraph(
     nodes.reserve(ids.size());
     std::unordered_map<long long, std::shared_ptr<RoadNode>> nextRoadNodes;
     for (size_t i = 0; i < ids.size(); ++i) {
-        auto node = std::make_shared<RoadNode>(ids[i], values[i * 4], values[i * 4 + 1]);
+        auto node = std::make_shared<RoadNode>(
+            ids[i], values[i * 4], values[i * 4 + 1]);
         node->x = values[i * 4 + 2];
         node->y = values[i * 4 + 3];
         if (!nextRoadNodes.emplace(node->id, node).second) {
-            throwJava(env, "java/lang/IllegalArgumentException", "Road node identifiers must be unique.");
+            throwJava(env, "java/lang/IllegalArgumentException",
+                      "Road node identifiers must be unique.");
             return nullptr;
         }
         nodes.push_back(std::move(node));
     }
     for (size_t i = 0; i < from.size(); ++i) {
-        if (from[i] < 0 || to[i] < 0 || static_cast<size_t>(from[i]) >= nodes.size()
-            || static_cast<size_t>(to[i]) >= nodes.size()) {
-            throwJava(env, "java/lang/IllegalArgumentException", "Road edge references an unknown node.");
+        if (from[i] < 0 || to[i] < 0 ||
+            static_cast<size_t>(from[i]) >= nodes.size() ||
+            static_cast<size_t>(to[i]) >= nodes.size()) {
+            throwJava(env, "java/lang/IllegalArgumentException",
+                      "Road edge references an unknown node.");
             return nullptr;
         }
         nodes[from[i]]->edges.emplace_back(
@@ -247,11 +284,14 @@ JNIEXPORT jlongArray JNICALL Java_RouteOptimizerBridge_nativeSetRoadGraph(
     }
     jlongArray result = env->NewLongArray(static_cast<jsize>(retainedIds.size()));
     if (result != nullptr && !retainedIds.empty()) {
-        env->SetLongArrayRegion(result, 0, static_cast<jsize>(retainedIds.size()), retainedIds.data());
+        env->SetLongArrayRegion(
+            result, 0, static_cast<jsize>(retainedIds.size()),
+            retainedIds.data());
     }
     return result;
 }
 
+// Returns the identifier of the graph node nearest to the supplied coordinates.
 JNIEXPORT jlong JNICALL Java_RouteOptimizerBridge_nativeNearestRoadNode(
     JNIEnv* env, jclass, jlong handle, jdouble x, jdouble y) {
     NativeState* state = getState(env, handle);
@@ -262,6 +302,8 @@ JNIEXPORT jlong JNICALL Java_RouteOptimizerBridge_nativeNearestRoadNode(
     return node == nullptr ? 0 : static_cast<jlong>(node->id);
 }
 
+// Converts Java customers and depots, invokes route optimization, and encodes
+// the resulting routes as arrays of Java-side input indexes.
 JNIEXPORT jobjectArray JNICALL Java_RouteOptimizerBridge_nativeOptimize(
     JNIEnv* env,
     jclass,
@@ -302,11 +344,13 @@ JNIEXPORT jobjectArray JNICALL Java_RouteOptimizerBridge_nativeOptimize(
     std::unordered_map<int, int> customerIndexes;
     for (size_t i = 0; i < customers.size(); ++i) {
         if (!customerIndexes.emplace(customers[i], static_cast<int>(i)).second) {
-            throwJava(env, "java/lang/IllegalArgumentException", "Customer identifiers must be unique.");
+            throwJava(env, "java/lang/IllegalArgumentException",
+                      "Customer identifiers must be unique.");
             return nullptr;
         }
-        customerNodes.push_back(makeNode(
-            customers[i], customerPoints[i * 2], customerPoints[i * 2 + 1], false, demands[i]));
+        customerNodes.push_back(makeNode(customers[i], customerPoints[i * 2],
+                                         customerPoints[i * 2 + 1], false,
+                                         demands[i]));
     }
 
     std::vector<std::shared_ptr<Node>> depotNodes;
@@ -314,10 +358,12 @@ JNIEXPORT jobjectArray JNICALL Java_RouteOptimizerBridge_nativeOptimize(
     std::unordered_map<int, int> depotIndexes;
     for (size_t i = 0; i < depots.size(); ++i) {
         if (!depotIndexes.emplace(depots[i], static_cast<int>(i)).second) {
-            throwJava(env, "java/lang/IllegalArgumentException", "Depot identifiers must be unique.");
+            throwJava(env, "java/lang/IllegalArgumentException",
+                      "Depot identifiers must be unique.");
             return nullptr;
         }
-        auto name = static_cast<jstring>(env->GetObjectArrayElement(depotNames, static_cast<jsize>(i)));
+        auto name = static_cast<jstring>(env->GetObjectArrayElement(
+            depotNames, static_cast<jsize>(i)));
         if (env->ExceptionCheck()) {
             return nullptr;
         }
@@ -327,7 +373,8 @@ JNIEXPORT jobjectArray JNICALL Java_RouteOptimizerBridge_nativeOptimize(
             return nullptr;
         }
         depotNodes.push_back(makeNode(
-            depots[i], depotPoints[i * 2], depotPoints[i * 2 + 1], true, 0, std::move(depotName)));
+            depots[i], depotPoints[i * 2], depotPoints[i * 2 + 1], true, 0,
+            std::move(depotName)));
     }
 
     try {
@@ -337,7 +384,8 @@ JNIEXPORT jobjectArray JNICALL Java_RouteOptimizerBridge_nativeOptimize(
         if (intArrayClass == nullptr) {
             return nullptr;
         }
-        jobjectArray result = env->NewObjectArray(static_cast<jsize>(routes.size()), intArrayClass, nullptr);
+        jobjectArray result = env->NewObjectArray(
+            static_cast<jsize>(routes.size()), intArrayClass, nullptr);
         env->DeleteLocalRef(intArrayClass);
         if (result == nullptr) {
             return nullptr;
@@ -345,7 +393,8 @@ JNIEXPORT jobjectArray JNICALL Java_RouteOptimizerBridge_nativeOptimize(
         for (size_t i = 0; i < routes.size(); ++i) {
             auto depotIndex = depotIndexes.find(routes[i].depot->id);
             if (depotIndex == depotIndexes.end()) {
-                throw std::logic_error("The optimizer returned a route for an unknown depot.");
+                throw std::logic_error(
+                    "The optimizer returned a route for an unknown depot.");
             }
             std::vector<jint> encoded;
             encoded.reserve(routes[i].stops.size() + 1);
@@ -375,6 +424,7 @@ JNIEXPORT jobjectArray JNICALL Java_RouteOptimizerBridge_nativeOptimize(
     }
 }
 
+// Validates Java route arrays and returns the requested route measurement.
 JNIEXPORT jdouble JNICALL Java_RouteOptimizerBridge_nativeRouteMetric(
     JNIEnv* env,
     jclass,
@@ -406,6 +456,7 @@ JNIEXPORT jdouble JNICALL Java_RouteOptimizerBridge_nativeRouteMetric(
     }
 }
 
+// Calculates one native leg and returns its four metrics and road-node path.
 JNIEXPORT jobjectArray JNICALL Java_RouteOptimizerBridge_nativeLeg(
     JNIEnv* env,
     jclass,
@@ -458,6 +509,7 @@ JNIEXPORT jobjectArray JNICALL Java_RouteOptimizerBridge_nativeLeg(
     return response;
 }
 
+// Exposes the native great-circle distance helper to Java.
 JNIEXPORT jdouble JNICALL Java_RouteOptimizerBridge_nativeGeoKm(
     JNIEnv*, jclass, jdouble lat1, jdouble lon1, jdouble lat2, jdouble lon2) {
     return RouteOptimizer::geoKm(lat1, lon1, lat2, lon2);
