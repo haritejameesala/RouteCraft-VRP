@@ -6,9 +6,20 @@
         "**/.jj": true,
         "**/.DS_Store": true,
         "**/Thumbs.db": true,
+<<<<<<< HEAD
         "**/Document/*.aux": true,
         "**/Document/*.log": true,
         "**/Document/*.gz": true,
         "**/Document/*.out": true
+=======
+        "**/d:\\other_than_downloads\\DSA_PROJECT\\Algosmiths_106125071_106125069_106125071_Project\\Document\\RouteCraft_Report.aux": true,
+        "**/d:\\other_than_downloads\\DSA_PROJECT\\Algosmiths_106125071_106125069_106125071_Project\\Document\\RouteCraft_Report.log": true,
+        "**/d:\\other_than_downloads\\DSA_PROJECT\\Algosmiths_106125071_106125069_106125071_Project\\Document\\RouteCraft_Report.gz": true,
+        "**/d:\\other_than_downloads\\DSA_PROJECT\\Algosmiths_106125071_106125069_106125071_Project\\Document\\RouteCraft_Report.out": true,
+        "**/d:\\other_than_downloads\\DSA_PROJECT\\Algosmiths_106125071_106125069_106125071_Project\\Document\\RouteCraft_Flowchart.aux": true,
+        "**/d:\\other_than_downloads\\DSA_PROJECT\\Algosmiths_106125071_106125069_106125071_Project\\Document\\RouteCraft_Flowchart.log": true,
+        "**/d:\\other_than_downloads\\DSA_PROJECT\\Algosmiths_106125071_106125069_106125071_Project\\Document\\RouteCraft_Flowchart.gz": true,
+        "**/d:\\other_than_downloads\\DSA_PROJECT\\Algosmiths_106125071_106125069_106125071_Project\\Document\\RouteCraft_Flowchart.out": true
+>>>>>>> f02bda4f001e4da53e06de11b1566537a469b242
     }
 }

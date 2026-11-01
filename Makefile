@@ -10,6 +10,7 @@ endif
 endif
 endif
 
+<<<<<<< HEAD
 CPPFLAGS += -Iinclude/DSA -Iinclude/JNI
 CXXFLAGS += -std=c++17 -Wall -Wextra -Wpedantic -O2
 JNI_CPPFLAGS := -I"$(JAVA_HOME)/include" -I"$(JAVA_HOME)/include/win32"
@@ -28,14 +29,37 @@ CORE_SOURCES := \
 JNI_SOURCE := $(JNI_DIR)/RouteOptimizerJni.cpp
 
 CORE_OBJECTS := $(patsubst $(DSA_DIR)/%.cpp,$(OBJECT_DIR)/%.o,$(CORE_SOURCES))
+=======
+CPPFLAGS += -Iinclude
+CXXFLAGS += -std=c++17 -Wall -Wextra -Wpedantic -O2
+JNI_CPPFLAGS := -I"$(JAVA_HOME)/include" -I"$(JAVA_HOME)/include/win32"
+
+SOURCE_DIR := source
+OBJECT_DIR := object
+
+CORE_SOURCES := \
+    $(SOURCE_DIR)/RouteObjects.cpp \
+    $(SOURCE_DIR)/RouteConstructionAlgorithms.cpp \
+    $(SOURCE_DIR)/RouteImprovementAlgorithms.cpp \
+    $(SOURCE_DIR)/RoadNetworkAlgorithms.cpp
+JNI_SOURCE := integration/jni/RouteOptimizerJni.cpp
+
+CORE_OBJECTS := $(patsubst $(SOURCE_DIR)/%.cpp,$(OBJECT_DIR)/%.o,$(CORE_SOURCES))
+>>>>>>> f02bda4f001e4da53e06de11b1566537a469b242
 JNI_OBJECT := $(OBJECT_DIR)/RouteOptimizerJni.o
 
 DLL := build/RouteCraftDsa.dll
 APP_OBJECT := $(OBJECT_DIR)/RouteCraftDsaTests.o
 JAVA_SOURCES := \
+<<<<<<< HEAD
     $(JAVA_DIR)/RouteCraftVRP.java \
     $(JAVA_DIR)/RouteOptimizerBridge.java \
     $(JAVA_DIR)/RouteOptimizerBridgeTest.java
+=======
+    RouteCraftVRP.java \
+    RouteOptimizerBridge.java \
+    RouteOptimizerBridgeTest.java
+>>>>>>> f02bda4f001e4da53e06de11b1566537a469b242
 JAVA_STAMP := build/.java-classes
 
 .PHONY: all java test clean
@@ -48,7 +72,11 @@ $(OBJECT_DIR):
 build:
 	mkdir -p $@
 
+<<<<<<< HEAD
 $(OBJECT_DIR)/%.o: $(DSA_DIR)/%.cpp | $(OBJECT_DIR)
+=======
+$(OBJECT_DIR)/%.o: $(SOURCE_DIR)/%.cpp | $(OBJECT_DIR)
+>>>>>>> f02bda4f001e4da53e06de11b1566537a469b242
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(JNI_CPPFLAGS) -c $< -o $@
 
 $(JNI_OBJECT): $(JNI_SOURCE) | $(OBJECT_DIR)
