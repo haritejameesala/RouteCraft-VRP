@@ -40,17 +40,10 @@ if errorlevel 1 (
 )
 if not exist build mkdir build
 "%CXX%" -std=c++17 -O2 -Wall -Wextra -Wpedantic -shared ^
-<<<<<<< HEAD
   -I include\DSA -I include\JNI -I "%JAVA_HOME%\include" -I "%JAVA_HOME%\include\win32" ^
   Source\DSA\RouteObjects.cpp Source\DSA\RouteConstructionAlgorithms.cpp ^
   Source\DSA\RouteImprovementAlgorithms.cpp Source\DSA\RoadNetworkAlgorithms.cpp ^
   Source\JNI\RouteOptimizerJni.cpp ^
-=======
-  -I include -I "%JAVA_HOME%\include" -I "%JAVA_HOME%\include\win32" ^
-  source\RouteObjects.cpp source\RouteConstructionAlgorithms.cpp ^
-  source\RouteImprovementAlgorithms.cpp source\RoadNetworkAlgorithms.cpp ^
-  integration\jni\RouteOptimizerJni.cpp ^
->>>>>>> f02bda4f001e4da53e06de11b1566537a469b242
   -o build\RouteCraftDsa.dll
 if errorlevel 1 (
   echo.
@@ -58,11 +51,7 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-<<<<<<< HEAD
 javac -encoding UTF-8 -d build Source\Java\RouteCraftVRP.java Source\Java\RouteOptimizerBridge.java
-=======
-javac -encoding UTF-8 -d build RouteCraftVRP.java RouteOptimizerBridge.java
->>>>>>> f02bda4f001e4da53e06de11b1566537a469b242
 if errorlevel 1 (
   echo.
   echo Java interface compilation failed. Review the errors above.
