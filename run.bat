@@ -1,3 +1,5 @@
+REM File purpose: Builds and launches RouteCraft on Windows.
+REM Flow: Check JDK/compiler -> build the JNI DLL -> compile Java -> start the app.
 @echo off
 setlocal
 cd /d "%~dp0"

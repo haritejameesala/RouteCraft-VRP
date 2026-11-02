@@ -1,5 +1,8 @@
 // File purpose: Declares the JNI methods that expose the native optimizer to Java.
 // DSA part: Integration support; not assigned to Parts 1, 2, or 3.
+// Flow:
+//   Create/destroy native state -> set graph and scoring inputs -> request routes
+//   or measurements -> return native results through Java-compatible types.
 #ifndef ROUTE_OPTIMIZER_JNI_H
 #define ROUTE_OPTIMIZER_JNI_H
 

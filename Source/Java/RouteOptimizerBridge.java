@@ -1,3 +1,7 @@
+// File purpose: Coordinates Java route planning with the native C++ optimizer.
+// Flow:
+//   Prepare depot/customer and road-graph data -> call native methods through JNI
+//   -> restore native results to Java objects -> support metrics and per-depot plans.
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -5,7 +9,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+// Holds the location and fleet details shared with both routing layers.
 class Node {
+    // Identity and load data are sent to the optimizer; coordinates are map-space values.
     int id;
     int demand;
     double x;
@@ -16,6 +22,7 @@ class Node {
     int dedicatedVehicles = 2;
     int maxAdhocVehicles = 1;
 
+    // Keeps a location's identity, position, demand and depot/customer role together.
     Node(int id, String name, double x, double y, int demand, boolean depot) {
         this.id = id;
         this.name = name;
@@ -25,16 +32,20 @@ class Node {
         this.depot = depot;
     }
 
+    // Uses depot names for depots and stable customer IDs for customer labels.
     String label() {
         return depot ? name : "C" + id;
     }
 }
 
+// Represents one closed trip and records which kind of vehicle serves it.
 class Route {
+    // Every route belongs to one depot and keeps its customer stops in visit order.
     Node depot;
     List<Node> stops = new ArrayList<>();
     int fleetTier; // 0 dedicated, 1 ad-hoc, 2 virtual (not dispatchable)
 
+    // Adds customer demand so the planner can check the route's capacity.
     int load() {
         int totalDemand = 0;
         for (Node stop : stops) {
@@ -44,7 +55,9 @@ class Route {
     }
 }
 
+// Represents one road-graph vertex and its outgoing road segments.
 class RoadNode {
+    // Geographic values locate the original OSM point; x and y locate it on screen.
     long id;
     double lat;
     double lon;
@@ -52,6 +65,7 @@ class RoadNode {
     double y;
     List<RoadEdge> edges = new ArrayList<>();
 
+    // Geographic coordinates are later paired with projected map coordinates.
     RoadNode(long id, double lat, double lon) {
         this.id = id;
         this.lat = lat;
@@ -59,12 +73,15 @@ class RoadNode {
     }
 }
 
+// Stores one directed road connection and its distance, time and cost.
 class RoadEdge {
+    // Each edge points to its destination and carries the measurements used by Dijkstra.
     RoadNode to;
     double km;
     double minutes;
     double cost;
 
+    // Keeps the edge's destination and measurements together.
     RoadEdge(RoadNode to, double km, double minutes, double cost) {
         this.to = to;
         this.km = km;
@@ -73,7 +90,9 @@ class RoadEdge {
     }
 }
 
+// Holds the measurements and road vertices for one trip between two locations.
 class Leg {
+    // The path is empty for straight-line fallback; the four values hold leg totals.
     List<RoadNode> path = new ArrayList<>();
     double km;
     double minutes;
@@ -85,6 +104,7 @@ class Leg {
  * JNI adapter between the Java interface and the C++ routing engine.
  */
 class RouteOptimizerBridge implements AutoCloseable {
+    // These values are shared with the native switch that selects a route metric.
     private static final int METRIC_KILOMETRES = 0;
     private static final int METRIC_MINUTES = 1;
     private static final int METRIC_COST = 2;
@@ -94,25 +114,30 @@ class RouteOptimizerBridge implements AutoCloseable {
         System.loadLibrary("RouteCraftDsa");
     }
 
+    // The handle owns the native optimizer; the Java map resolves its returned IDs.
     private long nativeHandle;
     private final Map<Long, RoadNode> roadNodes;
     private final Map<String, Leg> legCache = new HashMap<>();
 
+    // Creates the native engine and keeps the graph map used to rebuild leg paths.
     RouteOptimizerBridge(Map<Long, RoadNode> roadNodes) {
         this.roadNodes = roadNodes;
         nativeHandle = nativeCreate();
     }
 
+    // Sends updated score weights to C++ and drops Java's scores from the old weights.
     void setWeights(double distance, double time, double cost) {
         nativeSetWeights(nativeHandle, distance, time, cost);
         legCache.clear();
     }
 
+    // Tells C++ whether road paths are available for the next leg calculation.
     void setRoadNetworkLoaded(boolean loaded) {
         nativeSetRoadNetworkLoaded(nativeHandle, loaded);
         legCache.clear();
     }
 
+    // Clears both caches together so Java and C++ cannot disagree about a leg.
     void clearCache() {
         nativeClearCache(nativeHandle);
         legCache.clear();
@@ -181,6 +206,7 @@ class RouteOptimizerBridge implements AutoCloseable {
         legCache.clear();
     }
 
+    // Preserves the fixed-fleet call while reusing the flexible fleet code.
     List<Route> optimize(
             List<Node> customers, List<Node> depots, int vehicleCount,
             int capacity, boolean useSavings) {
@@ -193,6 +219,7 @@ class RouteOptimizerBridge implements AutoCloseable {
     private static final double ADHOC_ROUTE_PENALTY = 100.0;
     private static final double VIRTUAL_DEMAND_PENALTY = 100000.0;
 
+    // Builds a depot-local plan, tries one bounded reassignment, then keeps the better result.
     List<Route> optimizePerDepot(List<Node> customers, List<Node> depots,
             int capacity, boolean useSavings) {
         if (depots.isEmpty() && !customers.isEmpty()) {
@@ -220,6 +247,7 @@ class RouteOptimizerBridge implements AutoCloseable {
                 ? secondPass : firstPass;
     }
 
+    // Balances distance against each depot's remaining fleet capacity as customers are assigned.
     private List<List<Node>> capacityAwareInitialClusters(List<Node> customers,
             List<Node> depots, int capacity, boolean recordInitialDepot) {
         List<List<Node>> clusters = new ArrayList<>();
@@ -255,12 +283,14 @@ class RouteOptimizerBridge implements AutoCloseable {
         return clusters;
     }
 
+    // Copies each depot's customer list so a trial plan cannot alter the baseline.
     private List<List<Node>> copyClusters(List<List<Node>> source) {
         List<List<Node>> copy = new ArrayList<>();
         for (List<Node> cluster : source) copy.add(new ArrayList<>(cluster));
         return copy;
     }
 
+    // Tries dedicated capacity first, then local ad-hoc capacity and final re-clustering.
     private List<Route> runDepotPipeline(List<List<Node>> sourceClusters,
             List<Node> depots, int capacity, boolean useSavings) {
         List<List<Node>> clusters = copyClusters(sourceClusters);
@@ -283,6 +313,7 @@ class RouteOptimizerBridge implements AutoCloseable {
         return result;
     }
 
+    // Moves only a bounded set of overloaded customers toward feasible, less-loaded depots.
     private boolean applyBottleneckFeedback(List<List<Node>> clusters,
             List<Route> routes, List<Node> depots, int capacity) {
 
@@ -339,6 +370,7 @@ class RouteOptimizerBridge implements AutoCloseable {
         return changed;
     }
 
+    // Finds the strongest fleet tier currently needed for this customer.
     private int customerTier(Node customer, List<Route> routes) {
         int tier = 0;
         for (Route route : routes) if (route.stops.contains(customer))
@@ -346,12 +378,14 @@ class RouteOptimizerBridge implements AutoCloseable {
         return tier;
     }
 
+    // Measures how far a customer is from the depot currently serving it.
     private double distanceFromAssignedDepot(Node customer, List<Route> routes) {
         for (Route route : routes) if (route.stops.contains(customer))
             return Math.hypot(customer.x - route.depot.x, customer.y - route.depot.y);
         return 0.0;
     }
 
+    // Penalizes non-dedicated and virtual routes so feasible plans are preferred.
     private double solutionObjective(List<Route> routes) {
         double objective = 0.0;
         for (Route route : routes) {
@@ -364,6 +398,7 @@ class RouteOptimizerBridge implements AutoCloseable {
         return objective;
     }
 
+    // Runs the native optimizer separately for each depot and its own fleet.
     private List<List<Route>> buildDepotPlans(List<List<Node>> clusters,
             List<Node> depots, int capacity, boolean useSavings,
             boolean dedicatedOnly) {
@@ -379,11 +414,13 @@ class RouteOptimizerBridge implements AutoCloseable {
         return plans;
     }
 
+    // Checks whether any route is a planning-only placeholder.
     private boolean hasVirtualRoutes(List<Route> routes) {
         for (Route route : routes) if (route.fleetTier == 2) return true;
         return false;
     }
 
+    // Totals route scores without fleet penalties for comparing local depot plans.
     private double planScore(List<Route> routes) {
         double total = 0.0;
         for (Route route : routes) total += routeDistance(route.depot, route.stops);
@@ -394,6 +431,7 @@ class RouteOptimizerBridge implements AutoCloseable {
     // candidate receiving depot is accepted only when its own real fleet can
     // serve the entire resulting cluster. The best feasible incremental route
     // score is selected, and both affected depot plans are recalculated.
+    // Moves feasible customers off virtual routes without moving vehicles between depots.
     private void reassignVirtualCustomers(List<List<Node>> clusters,
             List<List<Route>> plans, List<Node> depots, int capacity,
             boolean useSavings, boolean dedicatedOnly) {
@@ -469,6 +507,7 @@ class RouteOptimizerBridge implements AutoCloseable {
         }
     }
 
+    // Flattens Java objects into primitive arrays, calls C++, and restores route objects.
     List<Route> optimizeElastic(
             List<Node> customers, List<Node> depots, int dedicatedVehicles,
             int maxAdhocVehicles, int capacity, boolean useSavings) {
@@ -522,22 +561,27 @@ class RouteOptimizerBridge implements AutoCloseable {
         return routes;
     }
 
+    // Returns the weighted score for a full round trip.
     double routeDistance(Node depot, List<Node> stops) {
         return routeMetric(depot, stops, METRIC_SCORE);
     }
 
+    // Returns the round-trip distance in kilometres or map units.
     double routeKm(Node depot, List<Node> stops) {
         return routeMetric(depot, stops, METRIC_KILOMETRES);
     }
 
+    // Returns the round-trip travel-time estimate.
     double routeMinutes(Node depot, List<Node> stops) {
         return routeMetric(depot, stops, METRIC_MINUTES);
     }
 
+    // Returns the round-trip cost estimate.
     double routeCost(Node depot, List<Node> stops) {
         return routeMetric(depot, stops, METRIC_COST);
     }
 
+    // Encodes a depot and its stops in the primitive layout expected by JNI.
     private double routeMetric(Node depot, List<Node> stops, int metric) {
         if (depot == null || stops.isEmpty()) {
             return 0.0;
@@ -560,6 +604,7 @@ class RouteOptimizerBridge implements AutoCloseable {
         return nativeRouteMetric(nativeHandle, ids, depotFlags, coordinates, metric);
     }
 
+    // Gets a cached leg or asks native code to calculate its metrics and road path.
     Leg leg(Node from, Node to) {
         String key = from.id + ":" + (from.depot ? "D" : "C")
             + ":" + to.id + ":" + (to.depot ? "D" : "C");
@@ -595,16 +640,19 @@ class RouteOptimizerBridge implements AutoCloseable {
         return result;
     }
 
+    // Resolves the native nearest-node result back to its Java graph object.
     RoadNode nearestRoadNode(double x, double y) {
         long id = nativeNearestRoadNode(nativeHandle, x, y);
         return roadNodes.get(id);
     }
 
+    // Exposes the same geographic-distance calculation used by the native engine.
     static double geoKm(double lat1, double lon1, double lat2, double lon2) {
         return nativeGeoKm(lat1, lon1, lat2, lon2);
     }
 
     @Override
+    // Releases native state once; repeated close calls are harmless.
     public synchronized void close() {
         if (nativeHandle != 0) {
             nativeDestroy(nativeHandle);
@@ -612,11 +660,18 @@ class RouteOptimizerBridge implements AutoCloseable {
         }
     }
 
+    // Native entry points keep the Java/C++ boundary limited to primitive arrays.
+    // Creates the native optimizer and returns its opaque lifetime handle.
     private static native long nativeCreate();
+    // Releases resources owned by one native optimizer instance.
     private static native void nativeDestroy(long handle);
+    // Updates the normalized objective weights used by native route scoring.
     private static native void nativeSetWeights(long handle, double distance, double time, double cost);
+    // Selects whether the native optimizer should use a loaded road graph.
     private static native void nativeSetRoadNetworkLoaded(long handle, boolean loaded);
+    // Drops native leg measurements calculated with earlier inputs.
     private static native void nativeClearCache(long handle);
+    // Transfers road vertices and edge measurements into the native graph.
     private static native long[] nativeSetRoadGraph(
         long handle,
         long[] nodeIds,
@@ -624,8 +679,10 @@ class RouteOptimizerBridge implements AutoCloseable {
         int[] edgeFrom,
         int[] edgeTo,
         double[] edgeValues);
-    private static native long nativeNearestRoadNode(long handle, double x, double y);
-    private static native int[][] nativeOptimize(
+        // Returns the identifier of the graph vertex nearest to the supplied point.
+        private static native long nativeNearestRoadNode(long handle, double x, double y);
+        // Optimizes the supplied customers and encodes each route as integer indexes.
+        private static native int[][] nativeOptimize(
         long handle,
         int[] customerIds,
         int[] customerDemands,
@@ -637,12 +694,14 @@ class RouteOptimizerBridge implements AutoCloseable {
         int maxAdhocVehicles,
         int capacity,
         boolean useSavings);
+    // Measures a route using the requested native metric.
     private static native double nativeRouteMetric(
         long handle,
         int[] nodeIds,
         boolean[] depotFlags,
         double[] coordinates,
         int metric);
+    // Returns leg measurements and the road-vertex IDs that form its path.
     private static native Object[] nativeLeg(
         long handle,
         int fromId,
@@ -653,5 +712,6 @@ class RouteOptimizerBridge implements AutoCloseable {
         boolean toDepot,
         double toX,
         double toY);
+    // Calculates great-circle distance using the native implementation.
     private static native double nativeGeoKm(double lat1, double lon1, double lat2, double lon2);
 }

@@ -1,5 +1,9 @@
 // File purpose: Converts JNI calls and Java data into native optimizer operations.
 // DSA part: Integration support; not assigned to Parts 1, 2, or 3.
+// Flow:
+//   Validate Java arguments -> translate primitive arrays into native DSA objects
+//   -> call the optimizer -> translate routes, metrics, and errors back to Java.
+// NativeState owns the graph and optimizer for each opaque Java handle.
 #include "RouteOptimizerJni.h"
 
 #include "RouteOptimizer.h"
@@ -18,7 +22,7 @@ namespace {
 
 // Owns one optimizer and the road graph it references for a Java engine handle.
 struct NativeState {
-    std::unordered_map<long long, std::shared_ptr<RoadNode>> roadNodes;
+    dsa::HashMap<long long, std::shared_ptr<RoadNode>> roadNodes;
     RouteOptimizer optimizer;
 
     NativeState() : optimizer(roadNodes) {}
@@ -139,7 +143,7 @@ jdouble routeMetricValue(
     }
 
     auto depot = makeNode(ids[0], coordinates[0], coordinates[1], true);
-    std::vector<std::shared_ptr<Node>> stops;
+    dsa::Array<std::shared_ptr<Node>> stops;
     stops.reserve(ids.size() - 1);
     for (size_t i = 1; i < ids.size(); ++i) {
         if (depotFlags[i] == JNI_TRUE) {
@@ -246,7 +250,7 @@ JNIEXPORT jlongArray JNICALL Java_RouteOptimizerBridge_nativeSetRoadGraph(
 
     std::vector<std::shared_ptr<RoadNode>> nodes;
     nodes.reserve(ids.size());
-    std::unordered_map<long long, std::shared_ptr<RoadNode>> nextRoadNodes;
+    dsa::HashMap<long long, std::shared_ptr<RoadNode>> nextRoadNodes;
     for (size_t i = 0; i < ids.size(); ++i) {
         auto node = std::make_shared<RoadNode>(
             ids[i], values[i * 4], values[i * 4 + 1]);
@@ -271,7 +275,10 @@ JNIEXPORT jlongArray JNICALL Java_RouteOptimizerBridge_nativeSetRoadGraph(
             nodes[to[i]], edgeMetrics[i * 3], edgeMetrics[i * 3 + 1], edgeMetrics[i * 3 + 2]);
     }
 
-    std::set<std::shared_ptr<RoadNode>> retained(nodes.begin(), nodes.end());
+    dsa::UniqueSet<std::shared_ptr<RoadNode>> retained;
+    for (const auto& node : nodes) {
+        retained.insert(node);
+    }
     RouteOptimizer::retainLargestStronglyConnectedComponent(retained);
     state->roadNodes.clear();
     for (const auto& node : retained) {
@@ -342,7 +349,7 @@ JNIEXPORT jobjectArray JNICALL Java_RouteOptimizerBridge_nativeOptimize(
         return nullptr;
     }
 
-    std::vector<std::shared_ptr<Node>> customerNodes;
+    dsa::Array<std::shared_ptr<Node>> customerNodes;
     customerNodes.reserve(customers.size());
     std::unordered_map<int, int> customerIndexes;
     for (size_t i = 0; i < customers.size(); ++i) {
@@ -356,7 +363,7 @@ JNIEXPORT jobjectArray JNICALL Java_RouteOptimizerBridge_nativeOptimize(
                                          demands[i]));
     }
 
-    std::vector<std::shared_ptr<Node>> depotNodes;
+    dsa::Array<std::shared_ptr<Node>> depotNodes;
     depotNodes.reserve(depots.size());
     std::unordered_map<int, int> depotIndexes;
     for (size_t i = 0; i < depots.size(); ++i) {
@@ -381,7 +388,7 @@ JNIEXPORT jobjectArray JNICALL Java_RouteOptimizerBridge_nativeOptimize(
     }
 
     try {
-        std::vector<Route> routes = state->optimizer.optimizeElastic(
+        dsa::Array<Route> routes = state->optimizer.optimizeElastic(
             customerNodes, depotNodes, dedicatedVehicles, maxAdhocVehicles,
             capacity, useSavings == JNI_TRUE);
         jclass intArrayClass = env->FindClass("[I");

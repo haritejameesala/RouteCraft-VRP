@@ -1,3 +1,7 @@
+# File purpose: Builds the C++ DSA engine, JNI library, Java app, and tests.
+# Flow:
+#   Compile DSA sources -> link native app/library -> compile Java classes
+#   -> run native and JNI bridge tests with `make test`.
 CXX ?= g++
 JAVA_HOME ?= $(shell powershell -NoProfile -Command "(Get-Command javac).Source | Split-Path -Parent | Split-Path -Parent" 2>NUL)
 
@@ -25,6 +29,7 @@ CORE_SOURCES := \
     $(DSA_DIR)/RouteConstructionAlgorithms.cpp \
     $(DSA_DIR)/RouteImprovementAlgorithms.cpp \
     $(DSA_DIR)/RoadNetworkAlgorithms.cpp
+DSA_HEADERS := $(wildcard include/DSA/*.h)
 JNI_SOURCE := $(JNI_DIR)/RouteOptimizerJni.cpp
 
 CORE_OBJECTS := $(patsubst $(DSA_DIR)/%.cpp,$(OBJECT_DIR)/%.o,$(CORE_SOURCES))
@@ -48,10 +53,13 @@ $(OBJECT_DIR):
 build:
 	mkdir -p $@
 
-$(OBJECT_DIR)/%.o: $(DSA_DIR)/%.cpp | $(OBJECT_DIR)
+$(OBJECT_DIR)/%.o: $(DSA_DIR)/%.cpp $(DSA_HEADERS) | $(OBJECT_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(JNI_CPPFLAGS) -c $< -o $@
 
-$(JNI_OBJECT): $(JNI_SOURCE) | $(OBJECT_DIR)
+$(APP_OBJECT): $(DSA_DIR)/RouteCraftDsaTests.cpp $(DSA_HEADERS) | $(OBJECT_DIR)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(JNI_CPPFLAGS) -c $< -o $@
+
+$(JNI_OBJECT): $(JNI_SOURCE) $(DSA_HEADERS) | $(OBJECT_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(JNI_CPPFLAGS) -c $< -o $@
 
 a.out: $(APP_OBJECT) $(CORE_OBJECTS)

@@ -1,26 +1,35 @@
+// File purpose: Verifies the Java/JNI/native routing contract with small scenarios.
+// Flow:
+//   Check fallback and road metrics -> exercise route optimization and fleet tiers
+//   -> test depot reassignment -> fail on the first broken expectation.
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 public final class RouteOptimizerBridgeTest {
+    // The test runner calls main directly; no instance state is needed.
     private RouteOptimizerBridgeTest() {}
 
+    // Stops a test immediately with a message that explains the broken expectation.
     private static void require(boolean condition, String message) {
         if (!condition) {
             throw new AssertionError(message);
         }
     }
 
+    // Uses a tight tolerance for values that cross the native boundary as doubles.
     private static void requireNear(double actual, double expected, String message) {
         require(Math.abs(actual - expected) < 1e-9, message + ": expected " + expected + ", got " + actual);
     }
 
+    // Covers fallback metrics, road routing, fleet tiers and per-depot reassignment.
     public static void main(String[] args) {
         require("km (OSM road distance)".equals(RouteCraftVRP.distanceUnitLabel(true)),
                 "A loaded OSM graph should label road distance in kilometres.");
         require("map units (no scale)".equals(RouteCraftVRP.distanceUnitLabel(false)),
                 "Coordinate-only routes should not be labelled as kilometres.");
 
+        // Start without roads to verify the coordinate-based distance fallback.
         Map<Long, RoadNode> roadNodes = new LinkedHashMap<>();
         RouteOptimizerBridge bridge = new RouteOptimizerBridge(roadNodes);
         try {
@@ -28,6 +37,7 @@ public final class RouteOptimizerBridgeTest {
             Node customer = new Node(1, "C1", 3.0, 0.0, 1, false);
             requireNear(bridge.routeKm(depot, List.of(customer)), 6.0, "Fallback round-trip distance");
 
+            // Build a tiny connected road pair and an isolated vertex for SCC filtering.
             RoadNode first = new RoadNode(100L, 0.0, 0.0);
             RoadNode second = new RoadNode(101L, 0.0, 1.0);
             RoadNode isolated = new RoadNode(102L, 1.0, 1.0);
@@ -59,12 +69,14 @@ public final class RouteOptimizerBridgeTest {
             require(Math.abs(bridge.geoKm(0.0, 0.0, 0.0, 1.0) - 111.195) < 0.1,
                     "Geographic distance should be about 111.2 km per equatorial longitude degree.");
 
+            // Check that JNI returns Java routes using the original object instances.
             List<Route> routes = bridge.optimize(List.of(customer), List.of(depot), 1, 1, true);
             require(routes.size() == 1, "The JNI optimizer should return one feasible route.");
             require(routes.get(0).depot == depot, "The route should retain the Java depot instance.");
             require(routes.get(0).stops.size() == 1 && routes.get(0).stops.get(0) == customer,
                     "The route should retain the Java customer instance.");
 
+            // Check that dedicated, ad-hoc and virtual route classifications survive JNI.
             List<Node> elasticCustomers = List.of(
                 new Node(21, "C21", 1.0, 1.0, 1, false),
                 new Node(22, "C22", 2.0, 2.0, 1, false),

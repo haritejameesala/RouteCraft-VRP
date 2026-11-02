@@ -1,14 +1,30 @@
 // File purpose: Declares the shared route, location, and road-graph data types.
 // DSA part: Shared support used by Parts 1, 2, and 3.
+// Flow:
+//   Node represents a depot or customer -> Route groups ordered customer stops
+//   under a depot -> RoadNode and RoadEdge represent the optional street graph
+//   -> Leg carries the selected path and its distance, time, cost, and score.
 #ifndef ROUTE_OBJECTS_H
 #define ROUTE_OBJECTS_H
 
+#include "DsaContainers.h"
+
 #include <memory>
 #include <string>
-#include <vector>
 
-// Forward declaration lets RoadNode store outgoing edges by value below.
-struct RoadEdge;
+struct RoadNode;
+
+// Directed road connection and its cost in each supported metric.
+struct RoadEdge {
+    std::weak_ptr<RoadNode> to;
+    double km = 0.0;
+    double minutes = 0.0;
+    double cost = 0.0;
+
+    RoadEdge();
+    RoadEdge(std::shared_ptr<RoadNode> to, double km, double minutes,
+             double cost);
+};
 
 // A customer or depot used as a stop in a delivery route.
 struct Node {
@@ -26,7 +42,7 @@ struct Node {
 // One vehicle's trip: its starting depot followed by its customer stops.
 struct Route {
     std::shared_ptr<Node> depot;              // Depot where this route begins/ends.
-    std::vector<std::shared_ptr<Node>> stops;  // Customers in visit order.
+    dsa::Array<std::shared_ptr<Node>> stops;
     int fleetTier = 0;  // 0=dedicated, 1=ad-hoc, 2=virtual planning route.
 
     // Adds the demands of all stops to get the vehicle load.
@@ -40,27 +56,15 @@ struct RoadNode {
     double lon;                    // Geographic longitude.
     double x;                      // Projected x coordinate used for matching.
     double y;                      // Projected y coordinate used for matching.
-    std::vector<RoadEdge> edges;   // Directed connections leaving this vertex.
+    dsa::Array<RoadEdge> edges;
 
     // Creates a graph vertex; projected coordinates are initialized separately.
     RoadNode(long long id, double lat, double lon);
 };
 
-// Directed road connection and its cost in each supported metric.
-struct RoadEdge {
-    std::weak_ptr<RoadNode> to;  // Destination; weak ownership avoids graph cycles.
-    double km;                   // Distance along this road segment.
-    double minutes;              // Travel time along this road segment.
-    double cost;                 // Monetary cost of this road segment.
-
-    // Creates an edge to a road node with its distance, time, and cost.
-    RoadEdge(std::shared_ptr<RoadNode> to, double km, double minutes,
-             double cost);
-};
-
 // Result of routing between two locations, including its graph path and metrics.
 struct Leg {
-    std::vector<std::shared_ptr<RoadNode>> path;  // Road vertices in travel order.
+    dsa::Array<std::shared_ptr<RoadNode>> path;
     double km = 0.0;                             // Total distance.
     double minutes = 0.0;                        // Total travel time.
     double cost = 0.0;                           // Total travel cost.

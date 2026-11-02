@@ -1,3 +1,7 @@
+// File purpose: Implements the RouteCraft desktop interface and map visualization.
+// Flow:
+//   Build the Swing workspace -> edit the depot/customer network -> load road data
+//   -> call the optimizer bridge -> display routes, metrics, animation, and exports.
 import javax.swing.*;
 import javax.swing.border.*;
 import java.awt.*;
@@ -32,10 +36,12 @@ public class RouteCraftVRP {
     static final Color VIOLET = new Color(112, 96, 123);
     static final Color[] ROUTE_COLORS = {JADE, BLUE, BRASS, VIOLET, ROSE, new Color(73,130,115), new Color(151,139,79), new Color(174,112,75)};
 
+    // Keep application records here; the optimizer receives the same live road graph.
     private final List<Node> customers=new ArrayList<>(), depots=new ArrayList<>();
     private final Map<Long,RoadNode> roadNodes=new LinkedHashMap<>();
     private final RouteOptimizerBridge optimizer=new RouteOptimizerBridge(roadNodes);
     // Public OpenStreetMap raster tiles are fetched only for the currently imported map extent.
+    // Tile requests run in the background while Swing keeps drawing the last cached image.
     private final Map<String,BufferedImage> tileCache=new java.util.concurrent.ConcurrentHashMap<>();
     private final Set<String> tileRequests=java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final ExecutorService tileLoader=Executors.newFixedThreadPool(3,r->{Thread t=new Thread(r,"osm-tile-loader");t.setDaemon(true);return t;});
@@ -56,6 +62,7 @@ public class RouteCraftVRP {
     private final JSpinner cap=spin(25,1,10000,1);
     private final JComboBox<String> algorithm=new JComboBox<>(new String[]{"Clarke–Wright savings + 2-opt","Nearest neighbor + 2-opt"});
     private final JComboBox<String> mapMode=new JComboBox<>(new String[]{"Inspect nodes","Place customer","Place depot"});
+    // Metric labels are updated together after edits, imports and optimization.
     private final JLabel totalDistance=value("—",26,JADE), vehiclesUsed=value("—",24,BRASS), served=value("0",24,BLUE), totalDemand=value("0",24,VIOLET);
     private final JLabel distanceUnit=value("map units",10,MUTED);
     private final JLabel status=value("READY TO OPTIMIZE",10,JADE);
@@ -74,9 +81,13 @@ public class RouteCraftVRP {
     private final JComboBox<String> vehicleFocus = new JComboBox<>(new String[]{"All vehicles"});
 
 
+    // Start Swing on its event thread so UI state is changed safely.
     public static void main(String[] args){SwingUtilities.invokeLater(()->{try{UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());}catch(Exception ignored){}new RouteCraftVRP().launch();});}
+    // Seed a usable example before building the lists and the window.
     RouteCraftVRP(){seed();refreshLists();configureUI();}
+    // Creates the spinner model used for coordinates, demand and capacity.
     private static JSpinner spin(Number v,Comparable min,Comparable max,Number step){return new JSpinner(new SpinnerNumberModel(v,min,max,step));}
+    // Applies the application's shared colors and fonts to Swing's standard dialogs.
     private void configureUI(){
         UIManager.put("ToolTip.background",SURFACE2);UIManager.put("ToolTip.foreground",TEXT);
         UIManager.put("ToolTip.font",new Font("Segoe UI",Font.PLAIN,12));
@@ -85,14 +96,17 @@ public class RouteCraftVRP {
         UIManager.put("OptionPane.background",SURFACE);UIManager.put("Panel.background",SURFACE);
         UIManager.put("OptionPane.messageForeground",TEXT);
     }
+    // Builds and displays the main window, then fills in its initial metrics.
     private void launch(){
         JFrame f=new JFrame("ROUTECRAFT  /  Routing Intelligence");
         f.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);f.setMinimumSize(new Dimension(1180,720));f.setSize(1600,1000);f.setExtendedState(JFrame.MAXIMIZED_BOTH);f.setLocationRelativeTo(null);f.addWindowListener(new WindowAdapter(){public void windowClosing(WindowEvent e){optimizer.close();}});
         f.setContentPane(buildUI());f.setVisible(true);refreshMetrics();
     }
+    // Assembles the sidebar, map workspace and scrollable layout.
     private JPanel buildUI(){
         JPanel root=new JPanel(new BorderLayout());root.setBackground(BG);root.add(header(),BorderLayout.NORTH);
         JPanel body=new JPanel(new BorderLayout(16,0));body.setBackground(BG);body.setBorder(new EmptyBorder(16,18,18,18));
+        // Keeps the narrow sidebar fixed in width while allowing vertical scrolling.
         class SideHost extends JPanel implements Scrollable{SideHost(){super(new BorderLayout());setOpaque(false);}
             public Dimension getPreferredScrollableViewportSize(){return getPreferredSize();}
             public int getScrollableUnitIncrement(Rectangle r,int o,int d){return 24;}
@@ -134,6 +148,7 @@ public class RouteCraftVRP {
         foot.add(footLeft,BorderLayout.WEST);foot.add(cursor,BorderLayout.EAST);mapCard.add(foot,BorderLayout.SOUTH);
         workspace.add(mapCard,BorderLayout.CENTER);
         workspace.add(routeCard(),BorderLayout.SOUTH);
+                // Lets the workspace grow vertically without introducing horizontal scrolling.
                 class WsPanel extends JPanel implements Scrollable{WsPanel(){super(new BorderLayout());setOpaque(false);}
             public Dimension getPreferredScrollableViewportSize(){return getPreferredSize();}
             public int getScrollableUnitIncrement(Rectangle r,int o,int d){return 24;}
@@ -145,6 +160,7 @@ public class RouteCraftVRP {
         mapMode.addActionListener(e->{String m=(String)mapMode.getSelectedItem();placeCustomer="Place customer".equals(m);placeDepot="Place depot".equals(m);});
         return root;
     }
+    // Shows the product identity and the project edition at the top of the window.
     private JPanel header(){
         JPanel p=new JPanel(new BorderLayout());p.setBackground(new Color(35,53,43));p.setBorder(new CompoundBorder(new MatteBorder(0,0,2,0,BRASS),new EmptyBorder(15,22,15,22)));
         JPanel brand=new JPanel(new FlowLayout(FlowLayout.LEFT,13,0));brand.setOpaque(false);
@@ -157,6 +173,7 @@ public class RouteCraftVRP {
         JPanel right=new JPanel(new FlowLayout(FlowLayout.RIGHT,10,7));right.setOpaque(false);
         right.add(pill("JAVA EDITION",new Color(201,214,194)));right.add(pill("DSA PROJECT",new Color(220,187,126)));p.add(right,BorderLayout.EAST);return p;
     }
+    // Introduces the routing workspace and its current planning focus.
     private JPanel intro(){
         JPanel p=new JPanel(new BorderLayout());p.setOpaque(false);
         JPanel left=new JPanel();left.setOpaque(false);left.setLayout(new BoxLayout(left,BoxLayout.Y_AXIS));
@@ -165,6 +182,7 @@ public class RouteCraftVRP {
         left.add(value("Design a fleet. Place your network. Optimize every journey.",12,MUTED));p.add(left,BorderLayout.WEST);
         JPanel right=new JPanel(new FlowLayout(FlowLayout.RIGHT,0,14));right.setOpaque(false);right.add(pill("CAPACITATED ROUTING",JADE));p.add(right,BorderLayout.EAST);return p;
     }
+    // Creates the controls for solver settings, locations, fleets and files.
     private JPanel sidebar(){
         JPanel s=card(14);s.setLayout(new BoxLayout(s,BoxLayout.Y_AXIS));
         s.add(section("01  /  SOLVER"));s.add(Box.createVerticalStrut(11));s.add(fieldLabel("Optimization method"));styleCombo(algorithm);algorithm.setMaximumSize(new Dimension(Integer.MAX_VALUE,34));s.add(algorithm);s.add(Box.createVerticalStrut(12));
@@ -213,19 +231,24 @@ public class RouteCraftVRP {
         redo.addActionListener(e->{if(!redoStack.isEmpty()){undoStack.push(serializeScenario());restoreScenario(redoStack.pop());setStatus("REDO APPLIED");}});
         s.add(Box.createVerticalGlue());return s;
     }
+    // Arranges the four summary cards above the map.
     private JPanel metrics(){
         JPanel p=new JPanel(new GridLayout(1,4,11,0));p.setOpaque(false);
         JPanel dm=card(13);dm.setLayout(new BorderLayout(0,7));dm.add(value("TOTAL DISTANCE",9,MUTED),BorderLayout.NORTH);dm.add(totalDistance,BorderLayout.CENTER);distanceUnit.setText(distanceUnitLabel());dm.add(distanceUnit,BorderLayout.SOUTH);dm.setPreferredSize(new Dimension(100,87));p.add(dm);p.add(metric("FLEET UTILIZATION","vehicles planned",vehiclesUsed,BRASS));p.add(metric("CUSTOMERS SERVED","delivery points",served,BLUE));p.add(metric("TOTAL DEMAND","units to deliver",totalDemand,VIOLET));return p;
     }
+    // Builds one compact summary card with a label, value and supporting text.
     private JPanel metric(String t,String sub,JLabel v,Color c){JPanel p=card(13);p.setLayout(new BorderLayout(0,7));p.add(value(t,9,MUTED),BorderLayout.NORTH);v.setForeground(c);p.add(v,BorderLayout.CENTER);p.add(value(sub,10,MUTED),BorderLayout.SOUTH);p.setPreferredSize(new Dimension(100,87));return p;}
+    // Gives the route manifest a consistent panel and scrollable output area.
     private JPanel routeCard(){
         JPanel p=card(10);p.setLayout(new BorderLayout(0,6));p.setPreferredSize(new Dimension(100,112));p.setMinimumSize(new Dimension(100,88));
         JPanel h=new JPanel(new BorderLayout());h.setOpaque(false);h.add(value("ROUTE MANIFEST",11,TEXT),BorderLayout.WEST);h.add(status,BorderLayout.EAST);p.add(h,BorderLayout.NORTH);
         routeOutput.setEditable(false);routeOutput.setFont(new Font("Consolas",Font.PLAIN,11));routeOutput.setBackground(SURFACE);routeOutput.setForeground(TEXT);routeOutput.setCaretColor(TEXT);
         JScrollPane sc=new JScrollPane(routeOutput);sc.setBorder(new LineBorder(LINE));sc.getViewport().setBackground(SURFACE);p.add(sc,BorderLayout.CENTER);return p;
     }
+    // Creates the shared rounded panel used across the application.
     private JPanel card(int pad){
         JPanel p=new JPanel(){
+            // Paints the panel background before Swing draws its child components.
             protected void paintComponent(Graphics gg){
                 Graphics2D g=(Graphics2D)gg.create();
                 g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
@@ -237,13 +260,20 @@ public class RouteCraftVRP {
         };
         p.setOpaque(false);p.setBorder(new EmptyBorder(pad,pad,pad,pad));return p;
     }
+    // Applies the common typography and color used for labels and values.
     private JLabel value(String t,int size,Color c){JLabel l=new JLabel(t);l.setForeground(c);l.setFont(new Font("Segoe UI",Font.PLAIN,size));if(size>=22)l.setFont(new Font("Georgia",Font.BOLD,size));return l;}
+    // Styles a small brass heading for each group of controls.
     private JLabel section(String t){JLabel l=value(t,10,BRASS);l.setFont(new Font("Segoe UI",Font.BOLD,10));return l;}
+    // Keeps form labels visually quieter than the values they describe.
     private JLabel fieldLabel(String t){return value(t,10,MUTED);}
+    // Wraps a spinner with its label and the application's input styling.
     private JPanel field(String t,JSpinner sp){JPanel p=new JPanel(new BorderLayout(0,5));p.setOpaque(false);p.add(fieldLabel(t),BorderLayout.NORTH);sp.setFont(new Font("Segoe UI",Font.PLAIN,12));sp.setBorder(new CompoundBorder(new RoundedBorder(LINE,10),new EmptyBorder(1,2,1,2)));sp.setOpaque(false);sp.setPreferredSize(new Dimension(80,29));JComponent ed=sp.getEditor();if(ed instanceof JSpinner.DefaultEditor){JFormattedTextField tf=((JSpinner.DefaultEditor)ed).getTextField();tf.setBackground(SURFACE2);tf.setForeground(TEXT);tf.setCaretColor(TEXT);tf.setBorder(new EmptyBorder(4,6,4,6));}p.add(sp,BorderLayout.CENTER);return p;}
+    // Draws a short status or category label inside a rounded outline.
     private JPanel pill(String t,Color c){JPanel p=new JPanel();p.setOpaque(false);p.setBorder(new CompoundBorder(new RoundedBorder(new Color(c.getRed(),c.getGreen(),c.getBlue(),150),14),new EmptyBorder(6,10,6,10)));p.add(value(t,9,c));return p;}
+    // Creates a button with the same rounded hover and pressed treatment.
     private JButton button(String t,boolean primary){
         JButton b=new JButton(t){
+            // Paints the button fill before Swing draws its text and icon.
             protected void paintComponent(Graphics gg){
                 Graphics2D g=(Graphics2D)gg.create();
                 g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
@@ -259,26 +289,35 @@ public class RouteCraftVRP {
         b.setBorder(new CompoundBorder(new RoundedBorder(primary?JADE:LINE,14),new EmptyBorder(7,11,7,11)));
         b.setRolloverEnabled(true);b.setContentAreaFilled(false);b.setOpaque(false);return b;
     }
+    // Applies the shared palette and font to dropdowns and lists.
     private void styleCombo(JComboBox<?> c){c.setBackground(SURFACE2);c.setForeground(TEXT);c.setFont(new Font("Segoe UI",Font.PLAIN,11));c.setBorder(new CompoundBorder(new RoundedBorder(LINE,10),new EmptyBorder(1,4,1,4)));c.setOpaque(false);}
+    // Applies the application's selection colors and readable row spacing to a list.
     private void styleList(JList<String> l){l.setBackground(SURFACE);l.setForeground(TEXT);l.setSelectionBackground(new Color(230,220,198));l.setSelectionForeground(TEXT);l.setFont(new Font("Segoe UI",Font.PLAIN,11));l.setFixedCellHeight(23);}
+    // Gives a list a fixed-height scroll area that matches the other panels.
     private JScrollPane scroll(JList<String> l,int h){JScrollPane p=new JScrollPane(l);p.setPreferredSize(new Dimension(100,h));p.setBorder(new RoundedBorder(LINE,10));p.getViewport().setBackground(SURFACE);return p;}
 
+    // Paints the rounded outline shared by form controls and cards.
     private static class RoundedBorder extends AbstractBorder{
         private final Color color;
         private final int radius;
+        // Keeps the requested outline color and corner size for painting.
         RoundedBorder(Color color,int radius){this.color=color;this.radius=radius;}
+        // Draws the border without modifying the component's graphics context.
         public void paintBorder(Component c,Graphics gg,int x,int y,int width,int height){
             Graphics2D g=(Graphics2D)gg.create();
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
             g.setColor(color);g.drawRoundRect(x,y,width-1,height-1,radius,radius);g.dispose();
         }
+        // Leaves a one-pixel inset so the rounded stroke is not clipped.
         public Insets getBorderInsets(Component c){return new Insets(1,1,1,1);}
     }
 
+    // Loads the built-in two-depot example and its sample customer locations.
     private void seed(){customers.clear();depots.clear();pauseAnimation();routes.clear();routeProgress=new double[0];nextCustomerId=1;nextDepotId=2;depots.add(new Node(1,"D1",50,50,0,true));depots.add(new Node(2,"D2",10,15,0,true));depots.get(0).dedicatedVehicles=2;depots.get(0).maxAdhocVehicles=1;depots.get(1).dedicatedVehicles=2;depots.get(1).maxAdhocVehicles=1;
         double[][] xy={{20,25},{30,18},{42,25},{62,18},{77,27},{84,42},{72,48},{88,63},{72,77},{58,84},{42,76},{25,83},{15,64},{29,54},{42,43},{55,59},{66,32},{35,64},{52,44}};
         int[] ds={4,5,3,7,4,6,5,3,8,4,6,2,5,3,7,4,5,6,5};for(int i=0;i<xy.length;i++)customers.add(new Node(nextCustomerId++,"Customer",xy[i][0],xy[i][1],ds[i],false));
     }
+    // Lets the user edit the dedicated and optional local fleet at one depot.
     private void configureSelectedDepotFleet(){
         int index=depotsList.getSelectedIndex();
         if(index<0){message("Select a depot to configure its fleet.");return;}
@@ -293,9 +332,13 @@ public class RouteCraftVRP {
             invalidateRoutes();refreshLists();refreshMetrics();setStatus("FLEET UPDATED FOR "+depot.name);
         }
     }
+    // Records an undo point before adding a customer and invalidating old routes.
     private void addCustomer(double x,double y,int d){pushUndo();customers.add(new Node(nextCustomerId++,"Customer",x,y,d,false));invalidateRoutes();refreshLists();map.repaint();refreshMetrics();setStatus("Customer added at ("+fmt(x)+", "+fmt(y)+") · UNDO AVAILABLE");}
+    // Adds a depot with the project's default fleet and refreshes the map.
     private void addDepot(double x,double y){pushUndo();Node created=new Node(nextDepotId,"D"+nextDepotId,x,y,0,true);created.dedicatedVehicles=2;created.maxAdhocVehicles=1;depots.add(created);nextDepotId++;pauseAnimation();routes.clear();routeProgress=new double[0];refreshLists();map.repaint();refreshMetrics();setStatus("Depot added at ("+fmt(x)+", "+fmt(y)+")");}
+    // Rebuilds the visible customer and depot registers from current records.
     private void refreshLists(){customerModel.clear();for(Node n:customers)customerModel.addElement(String.format(Locale.US,"C%-3d  (%5s, %5s)  d=%d",n.id,fmt(n.x),fmt(n.y),n.demand));depotModel.clear();for(Node n:depots)depotModel.addElement(String.format(Locale.US,"%-3s  (%5s, %5s)  D:%d A:%d",n.name,fmt(n.x),fmt(n.y),n.dedicatedVehicles,n.maxAdhocVehicles));}
+    // Runs the selected route construction method and updates all map summaries.
     private void solve(){
         capacity=(Integer)cap.getValue();
         vehicleCount=depots.stream().mapToInt(d->d.dedicatedVehicles+d.maxAdhocVehicles).sum();
@@ -313,6 +356,7 @@ public class RouteCraftVRP {
         setStatus(servedCount==customers.size()&&virtual==0?(adhoc>0?"OPTIMIZED · AD-HOC FLEET ACTIVATED":"OPTIMIZATION COMPLETE"):
             "VIRTUAL FLEET REQUIRED: "+virtual+" additional vehicle(s) · "+servedCount+"/"+customers.size()+" customers planned");
     }
+    // Reads OSM nodes and ways, builds directed road links, and snaps locations to the graph.
     private void importOsmRoads(){JFileChooser fc=new JFileChooser();fc.setDialogTitle("Import OpenStreetMap XML (.osm)");fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("OpenStreetMap XML (*.osm)","osm","xml"));if(fc.showOpenDialog(null)!=JFileChooser.APPROVE_OPTION)return;try{pushUndo();loadOsm(fc.getSelectedFile());setStatus("OSM ROAD GRAPH LOADED · OPTIMIZE AGAIN");}catch(Exception ex){message("Could not load OSM file: "+ex.getMessage());}}
     private void loadOsm(File file)throws Exception{
         DocumentBuilderFactory f=DocumentBuilderFactory.newInstance();f.setFeature("http://apache.org/xml/features/disallow-doctype-decl",true);f.setFeature("http://xml.org/sax/features/external-general-entities",false);f.setFeature("http://xml.org/sax/features/external-parameter-entities",false);f.setExpandEntityReferences(false);
@@ -350,6 +394,7 @@ public class RouteCraftVRP {
         for(Node depot:depots){RoadNode snap=optimizer.nearestRoadNode(depot.x,depot.y);if(snap!=null){depot.x=snap.x;depot.y=snap.y;}}
         optimizer.clearCache();routes.clear();routeProgress=new double[0];pauseAnimation();roadStatus.setText("OSM: "+roadNodes.size()+" nodes · "+edges+" road links");roadStatus.setForeground(JADE);map.fit();map.repaint();refreshMetrics();renderRoutes();loadMapTilesAsync();
     }
+    // Fits the imported road component into the map's shared 0-to-100 coordinate space.
     private void fitRoadNetworkCoordinates(Set<RoadNode> roadComponent){
         double componentMinLat=Double.POSITIVE_INFINITY,componentMaxLat=Double.NEGATIVE_INFINITY;
         double componentMinLon=Double.POSITIVE_INFINITY,componentMaxLon=Double.NEGATIVE_INFINITY;
@@ -368,25 +413,32 @@ public class RouteCraftVRP {
             roadNode.y=100*(mercatorY(roadNode.lat)-mercatorMin)/mercatorSpan;
         }
     }
+    // Projects latitude to the vertical coordinate used by web map tiles.
     private static double mercatorY(double lat){
         double clipped=Math.max(-85.05112878,Math.min(85.05112878,lat));
         double rad=Math.toRadians(clipped);
         return Math.log(Math.tan(Math.PI/4.0+rad/2.0));
     }
+    // Converts a longitude or latitude to its tile coordinate at the chosen zoom.
     private static int tileX(double lon,int z){return (int)Math.floor((lon+180.0)/360.0*(1<<z));}
+    // Uses the same slippy-map projection to find a tile's vertical index.
     private static int tileY(double lat,int z){
         double r=Math.toRadians(Math.max(-85.05112878,Math.min(85.05112878,lat)));
         return (int)Math.floor((1.0-Math.log(Math.tan(r)+1.0/Math.cos(r))/Math.PI)/2.0*(1<<z));
     }
     private final Set<String> tileFailed=java.util.concurrent.ConcurrentHashMap.newKeySet();
+    // Updates the tile status and lets drawing request only tiles in view.
     private void loadMapTilesAsync(){
         if(!roadNetworkLoaded)return;
         tileFailed.clear();
         roadStatus.setText("OSM: loading real map tiles…");roadStatus.setForeground(BRASS);
         map.repaint();
     }
+    // Converts tile coordinates back to longitude and latitude.
     private static double lonFromTileX(double x,int z){return x/(double)(1<<z)*360.0-180.0;}
+    // Converts tile row coordinates back to geographic latitude.
     private static double latFromTileY(double y,int z){double n=Math.PI-2.0*Math.PI*y/(1<<z);return Math.toDegrees(Math.atan(Math.sinh(n)));}
+    // Fetches one tile off the Swing thread and repaints when it is ready.
     private void requestTile(int z,int tx,int ty){
         final String key=z+"/"+tx+"/"+ty;
         if(tileCache.containsKey(key)||tileFailed.contains(key)||!tileRequests.add(key))return;
@@ -441,10 +493,15 @@ public class RouteCraftVRP {
             }
         }
     }
+    // Supplies a reasonable speed estimate when an OSM way has no maxspeed tag.
     private static double defaultSpeed(String highway){if(highway==null)return 30;switch(highway){case "motorway":return 90;case "trunk":return 70;case "primary":return 55;case "secondary":return 45;case "tertiary":return 35;case "residential":case "living_street":return 20;default:return 30;}}
+    // Recalculates the dashboard values from the current routes and customers.
     private void refreshMetrics(){distanceUnit.setText(distanceUnitLabel());double d=0;for(Route r:routes)d+=optimizer.routeKm(r.depot,r.stops);totalDistance.setText(routes.isEmpty()?"—":fmt(d));long actual=routes.stream().filter(r->r.fleetTier<2).count();long virtual=routes.stream().filter(r->r.fleetTier==2).count();vehiclesUsed.setText(routes.isEmpty()?"—":actual+" / "+vehicleCount+(virtual>0?"  (+"+virtual+" virtual)":""));vehiclesUsed.setForeground(virtual>0?ROSE:BRASS);served.setText(routes.isEmpty()?"0 / "+customers.size():routes.stream().mapToInt(r->r.stops.size()).sum()+" / "+customers.size());totalDemand.setText(String.valueOf(customers.stream().mapToInt(n->n.demand).sum()));}
+    // Keeps the unit wording testable without constructing the Swing application.
     static String distanceUnitLabel(boolean roadNetworkLoaded){return roadNetworkLoaded?"km (OSM road distance)":"map units (no scale)";}
+    // Uses kilometres for road-backed routes and map units otherwise.
     private String distanceUnitLabel(){return distanceUnitLabel(roadNetworkLoaded);}
+    // Rebuilds the textual route manifest and refreshes the summary cards.
     private void renderRoutes(){
         StringBuilder b=new StringBuilder();
         String distanceUnits=roadNetworkLoaded?"km":"map units";
@@ -480,6 +537,7 @@ public class RouteCraftVRP {
         routeOutput.setText(b.toString());
         routeOutput.setCaretPosition(0);
     }
+    // Starts a fresh vehicle simulation using one progress value per route.
     private void startAnimation(){
         if(routes.isEmpty()){message("Optimize routes before dispatching vehicles.");return;}
         if(routes.stream().anyMatch(r->r.fleetTier==2)){message("Dispatch blocked: virtual vehicles are planning placeholders. Increase the dedicated/ad-hoc fleet or revise the customer allocation.");return;}
@@ -487,9 +545,11 @@ public class RouteCraftVRP {
         animationRunning=true;lastTickNanos=System.nanoTime();simulationState.setText("● LIVE DISPATCH");simulationState.setForeground(JADE);
         animationTimer.start();map.repaint();
     }
+    // Stops the timer without discarding the current route progress.
     private void pauseAnimation(){
         animationRunning=false;animationTimer.stop();simulationState.setText("SIMULATION PAUSED");simulationState.setForeground(MUTED);map.repaint();
     }
+    // Advances each vehicle along its closed route and asks Swing to redraw.
     private void tickAnimation(){
         long now=System.nanoTime();double dt=Math.min(0.12,(now-lastTickNanos)/1_000_000_000.0);lastTickNanos=now;
         for(int i=0;i<routes.size();i++){
@@ -499,13 +559,16 @@ public class RouteCraftVRP {
         }
         map.repaint();
     }
+    // Interpolates a vehicle marker along road geometry or straight-line fallback legs.
     private Point2D.Double vehiclePosition(Route r,double progress){
         List<Point2D.Double> path=new ArrayList<>();List<Node> stops=new ArrayList<>();stops.add(r.depot);stops.addAll(r.stops);stops.add(r.depot);
         for(int i=0;i<stops.size()-1;i++){Leg l=optimizer.leg(stops.get(i),stops.get(i+1));if(l.path.size()>1){for(int j=0;j<l.path.size();j++){RoadNode rn=l.path.get(j);if(path.isEmpty()||j>0)path.add(new Point2D.Double(rn.x,rn.y));}}else{Node a=stops.get(i),b=stops.get(i+1);if(path.isEmpty())path.add(new Point2D.Double(a.x,a.y));path.add(new Point2D.Double(b.x,b.y));}}
         if(path.size()<2)return new Point2D.Double(r.depot.x,r.depot.y);double total=0;double[] lens=new double[path.size()-1];for(int i=0;i<lens.length;i++){lens[i]=Math.hypot(path.get(i+1).x-path.get(i).x,path.get(i+1).y-path.get(i).y);total+=lens[i];}double target=progress*total;
         for(int i=0;i<lens.length;i++){if(target<=lens[i]||i==lens.length-1){double t=lens[i]<1e-9?0:target/lens[i];Point2D.Double a=path.get(i),b=path.get(i+1);return new Point2D.Double(a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t);}target-=lens[i];}return path.get(path.size()-1);
     }
+    // Clears plans whose locations or fleet assumptions have changed.
     private void invalidateRoutes(){pauseAnimation();routes.clear();routeProgress=new double[0];renderRoutes();}
+    // Removes the selected customer, optionally asking before the change.
     private void removeSelectedCustomer(boolean confirm){
         int i=customersList.getSelectedIndex();
         if(i<0){message("Select a customer in the Customer Register first.");return;}
@@ -513,6 +576,7 @@ public class RouteCraftVRP {
         if(confirm&&JOptionPane.showConfirmDialog(null,"Delete "+n.label()+" (demand "+n.demand+")? This can be undone.","Delete customer",JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;
         pushUndo();customers.remove(i);invalidateRoutes();refreshLists();map.repaint();refreshMetrics();setStatus(n.label()+" DELETED · UNDO AVAILABLE");
     }
+    // Removes a selected depot while ensuring at least one remains in the network.
     private void removeSelectedDepot(){
         int i=depotsList.getSelectedIndex();
         if(i<0){message("Select a depot first.");return;}
@@ -521,6 +585,7 @@ public class RouteCraftVRP {
         if(JOptionPane.showConfirmDialog(null,"Remove depot "+n.name+"? Routes will need to be optimized again.","Remove depot",JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;
         pushUndo();depots.remove(i);invalidateRoutes();refreshLists();map.repaint();refreshMetrics();setStatus("DEPOT REMOVED · UNDO AVAILABLE");
     }
+    // Copies the selected customer's demand to a nearby new location.
     private void duplicateSelectedCustomer(){
         int i=customersList.getSelectedIndex();
         if(i<0){message("Select a customer to duplicate.");return;}
@@ -529,7 +594,9 @@ public class RouteCraftVRP {
         customers.add(new Node(nextCustomerId++,"Customer",x,y,n.demand,false));
         invalidateRoutes();refreshLists();customersList.setSelectedIndex(customers.size()-1);map.repaint();refreshMetrics();setStatus("CUSTOMER DUPLICATED · UNDO AVAILABLE");
     }
+    // Saves the current scenario before an edit and discards an outdated redo branch.
     private void pushUndo(){undoStack.push(serializeScenario());redoStack.clear();if(undoStack.size()>30)undoStack.removeLast();}
+    // Encodes depots, customers, weights and the source OSM path as scenario text.
     private String serializeScenario(){
         StringBuilder b=new StringBuilder("ROUTECRAFT,1\n");
         for(Node d:depots)b.append("D,").append(d.id).append(',').append(d.name).append(',').append(d.x).append(',').append(d.y).append(",0\n");
@@ -538,6 +605,7 @@ public class RouteCraftVRP {
         b.append("P,").append(weightDistance).append(',').append(weightTime).append(',').append(weightCost).append(',').append(encodedPath).append('\n');
         return b.toString();
     }
+    // Rebuilds the complete editable scenario from its saved text representation.
     private void restoreScenario(String data){
         customers.clear();depots.clear();routes.clear();nextCustomerId=1;nextDepotId=1;String restoredPath="";double wd=0.40,wt=0.35,wc=0.25;
         for(String line:data.split("\\R")){String[] p=line.split(",",-1);try{
@@ -552,20 +620,31 @@ public class RouteCraftVRP {
         else{roadNetworkLoaded=false;roadNodes.clear();optimizer.setRoadGraph(roadNodes);optimizer.setRoadNetworkLoaded(false);roadNetworkPath="";distanceUnit.setText(distanceUnitLabel());roadStatus.setText("ROAD GRAPH: NOT LOADED");roadStatus.setForeground(ROSE);}
         pauseAnimation();routeProgress=new double[0];refreshLists();refreshMetrics();map.repaint();renderRoutes();
     }
+    // Writes the current scenario to the file selected by the user.
     private void saveScenario(){JFileChooser c=new JFileChooser();c.setSelectedFile(new java.io.File("routecraft-scenario.csv"));if(c.showSaveDialog(null)==JFileChooser.APPROVE_OPTION)try{java.nio.file.Files.writeString(c.getSelectedFile().toPath(),serializeScenario(),java.nio.charset.StandardCharsets.UTF_8);setStatus("SCENARIO SAVED");}catch(Exception ex){message("Save failed: "+ex.getMessage());}}
+    // Loads a saved scenario while keeping the current state available for undo.
     private void loadScenario(){JFileChooser c=new JFileChooser();if(c.showOpenDialog(null)==JFileChooser.APPROVE_OPTION)try{pushUndo();restoreScenario(java.nio.file.Files.readString(c.getSelectedFile().toPath(),java.nio.charset.StandardCharsets.UTF_8));setStatus("SCENARIO LOADED");}catch(Exception ex){message("Load failed: "+ex.getMessage());}}
+    // Exports each route stop and its route-level measures as a CSV file.
     private void exportRoutes(){if(routes.isEmpty()){message("Optimize routes before exporting.");return;}JFileChooser c=new JFileChooser();c.setSelectedFile(new java.io.File("route-plan.csv"));if(c.showSaveDialog(null)==JFileChooser.APPROVE_OPTION)try{StringBuilder b=new StringBuilder("vehicle,depot,stop_order,customer_id,x,y,demand,route_load,route_distance,distance_unit,estimated_minutes,estimated_cost,objective_score\n");for(int i=0;i<routes.size();i++){Route r=routes.get(i);int k=1;for(Node n:r.stops)b.append("V").append(i+1).append(',').append(r.depot.name).append(',').append(k++).append(',').append(n.id).append(',').append(fmt(n.x)).append(',').append(fmt(n.y)).append(',').append(n.demand).append(',').append(r.load()).append(',').append(fmt(optimizer.routeKm(r.depot,r.stops))).append(',').append(roadNetworkLoaded?"km":"map units").append(',').append(fmt(optimizer.routeMinutes(r.depot,r.stops))).append(',').append(fmt(optimizer.routeCost(r.depot,r.stops))).append(',').append(fmt(optimizer.routeDistance(r.depot,r.stops))).append('\n');}java.nio.file.Files.writeString(c.getSelectedFile().toPath(),b.toString(),java.nio.charset.StandardCharsets.UTF_8);setStatus("ROUTES EXPORTED");}catch(Exception ex){message("Export failed: "+ex.getMessage());}}
+    // Edits the selected customer's name, position and delivery demand.
     private void editSelectedCustomer(){int i=customersList.getSelectedIndex();if(i<0){message("Select a customer first.");return;}Node n=customers.get(i);JSpinner x=spin(n.x,0.0,100.0,1.0),y=spin(n.y,0.0,100.0,1.0),d=spin(n.demand,1,100,1);JPanel p=new JPanel(new GridLayout(3,2,8,8));p.add(new JLabel("X coordinate"));p.add(x);p.add(new JLabel("Y coordinate"));p.add(y);p.add(new JLabel("Demand"));p.add(d);if(JOptionPane.showConfirmDialog(null,p,"Edit customer C"+n.id,JOptionPane.OK_CANCEL_OPTION)==JOptionPane.OK_OPTION){pushUndo();n.x=(Double)x.getValue();n.y=(Double)y.getValue();n.demand=(Integer)d.getValue();invalidateRoutes();refreshLists();refreshMetrics();map.repaint();setStatus("CUSTOMER UPDATED · UNDO AVAILABLE");}}
+    // Updates the short status message shown beside the route manifest heading.
     private void setStatus(String s){status.setText(s);}
+    // Shows a standard informational dialog for user-facing messages.
     private void message(String s){JOptionPane.showMessageDialog(null,s,"RouteCraft",JOptionPane.INFORMATION_MESSAGE);}
+    // Formats coordinates and metrics consistently with a single decimal place.
     private static String fmt(double n){return String.format(Locale.US,"%.1f",n);}
 
+    // Owns map interaction, coordinate transforms and custom route drawing.
     class MapCanvas extends JPanel{
+        // Zoom and pan describe the view; hover state drives the location label.
         double zoom=1,panX=0,panY=0;Point drag;double oldX,oldY;Node hoveredNode=null;
         MapCanvas(){setBackground(new Color(239,234,220));setPreferredSize(new Dimension(1100,650));setMinimumSize(new Dimension(600,360));addMouseMotionListener(new MouseMotionAdapter(){public void mouseMoved(MouseEvent e){Point2D.Double p=world(e.getX(),e.getY());cursor.setText(String.format(Locale.US,roadNetworkLoaded?"LON/LAT AREA  %5.1f / %5.1f":"X  %5.1f     Y  %5.1f",p.x,p.y));Node oldHover=hoveredNode;hoveredNode=nearest(p.x,p.y);if(oldHover!=hoveredNode)repaint();}public void mouseDragged(MouseEvent e){if(drag!=null){panX=oldX+e.getX()-drag.x;panY=oldY+e.getY()-drag.y;repaint();}}});
             addMouseListener(new MouseAdapter(){public void mousePressed(MouseEvent e){if(SwingUtilities.isRightMouseButton(e)||SwingUtilities.isMiddleMouseButton(e)){drag=e.getPoint();oldX=panX;oldY=panY;}}public void mouseReleased(MouseEvent e){drag=null;}public void mouseClicked(MouseEvent e){if(SwingUtilities.isRightMouseButton(e)||SwingUtilities.isMiddleMouseButton(e))return;Point2D.Double p=world(e.getX(),e.getY());p.x=clamp(p.x,0,100);p.y=clamp(p.y,0,100);if(placeCustomer){addCustomer(p.x,p.y,(Integer)demand.getValue());mapMode.setSelectedIndex(0);}else if(placeDepot){addDepot(p.x,p.y);mapMode.setSelectedIndex(0);}else{Node n=nearest(p.x,p.y);if(n!=null){cursor.setText(n.label()+"   X "+fmt(n.x)+"   Y "+fmt(n.y)+"   D "+n.demand);if(n.depot){for(int i=0;i<depots.size();i++)if(depots.get(i)==n)depotsList.setSelectedIndex(i);}else{for(int i=0;i<customers.size();i++)if(customers.get(i)==n)customersList.setSelectedIndex(i);}}}}});
             addMouseWheelListener(e->{double old=zoom;zoom=clamp(zoom*(e.getWheelRotation()<0?1.25:0.8),.5,roadNetworkLoaded?200:6);double k=zoom/old;double cx0=(getWidth()+54)/2.0,cy0=(getHeight()+42)/2.0;if(roadNetworkLoaded){panX=(e.getX()-cx0)-(e.getX()-cx0-panX)*k;panY=(e.getY()-cy0)-(e.getY()-cy0-panY)*k;}repaint();});}
+        // Resets zoom and panning to the default view.
         void fit(){zoom=1;panX=0;panY=0;}
+        // Finds the pixels-per-unit scale for either synthetic or geographic maps.
         double mapScale(){
             double ww=Math.max(1,getWidth()-54),hh=Math.max(1,getHeight()-42);
             if(!roadNetworkLoaded)return Math.min(ww/100.0,hh/100.0)*zoom;
@@ -573,20 +652,26 @@ public class RouteCraftVRP {
             double ySpan=Math.max(1e-9,mercatorY(maxLat)-mercatorY(minLat));
             return Math.min(ww/xSpan,hh/ySpan)*zoom;
         }
+        // Returns the map's left edge in screen coordinates.
         double mapLeft(){double ww=Math.max(1,getWidth()-54);if(!roadNetworkLoaded){double side=ww;return (getWidth()-side)/2+panX;}double sc=mapScale(),xSpan=Math.toRadians(maxLon-minLon);return (getWidth()+54)/2-(xSpan*sc)/2+panX;}
+        // Returns the map's top edge in screen coordinates.
         double mapTop(){double hh=Math.max(1,getHeight()-42);if(!roadNetworkLoaded){double side=hh;return (getHeight()-side)/2+panY;}double sc=mapScale(),ySpan=mercatorY(maxLat)-mercatorY(minLat);return (getHeight()+42)/2-(ySpan*sc)/2+panY;}
+        // Converts a screen point back to the map's normalized coordinate space.
         Point2D.Double world(int x,int y){
             if(roadNetworkLoaded){double sc=mapScale();double centerLon=(minLon+maxLon)/2.0,centerMerc=(mercatorY(minLat)+mercatorY(maxLat))/2.0;double lon=centerLon+((x-(getWidth()+54)/2.0-panX)/sc)*180.0/Math.PI;double merc=centerMerc-((y-(getHeight()+42)/2.0-panY)/sc);double lat=Math.toDegrees(2*Math.atan(Math.exp(merc))-Math.PI/2);return new Point2D.Double(100*(lon-minLon)/Math.max(1e-9,maxLon-minLon),100*(mercatorY(lat)-mercatorY(minLat))/Math.max(1e-9,mercatorY(maxLat)-mercatorY(minLat)));}
             double ww=Math.max(1,getWidth()-54)*zoom,hh=Math.max(1,getHeight()-42)*zoom,ox=(getWidth()-ww)/2+panX,oy=(getHeight()-hh)/2+panY;return new Point2D.Double((x-ox)/ww*100,100-(y-oy)/hh*100);
         }
+        // Converts a normalized map x coordinate into a screen pixel.
         int sx(double x){
             if(roadNetworkLoaded){double lon=minLon+(x/100.0)*(maxLon-minLon);double centerLon=(minLon+maxLon)/2.0;return (int)((getWidth()+54)/2.0+panX+(Math.toRadians(lon-centerLon))*mapScale());}
             double ww=Math.max(1,getWidth()-54)*zoom;return (int)((getWidth()-ww)/2+panX+x/100*ww);
         }
+        // Converts a normalized map y coordinate into a screen pixel.
         int sy(double y){
             if(roadNetworkLoaded){double merc=mercatorY(minLat)+(y/100.0)*(mercatorY(maxLat)-mercatorY(minLat));double centerMerc=(mercatorY(minLat)+mercatorY(maxLat))/2.0;return (int)((getHeight()+42)/2.0+panY-(merc-centerMerc)*mapScale());}
             double hh=Math.max(1,getHeight()-42)*zoom;return (int)((getHeight()-hh)/2+panY+(100-y)/100*hh);
         }
+        // Draws the basemap, road graph, routes, locations and animated vehicles.
         protected void paintComponent(Graphics gg){super.paintComponent(gg);Graphics2D g=(Graphics2D)gg.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);int w=getWidth(),h=getHeight();double side=Math.min(w-86,h-86)*zoom,ox=(w-side)/2+panX,oy=(h-side)/2+panY;
             double ww=Math.max(1,w-54)*zoom,hh=Math.max(1,h-42)*zoom;ox=(w-ww)/2+panX;oy=(h-hh)/2+panY;
             if(roadNetworkLoaded){double sc=mapScale(),xSpan=Math.toRadians(maxLon-minLon),ySpan=mercatorY(maxLat)-mercatorY(minLat);ww=xSpan*sc;hh=ySpan*sc;ox=(w+54)/2.0-ww/2+panX;oy=(h+42)/2.0-hh/2+panY;}
@@ -636,8 +721,11 @@ public class RouteCraftVRP {
             }
             if(roadNetworkLoaded){g.setColor(new Color(255,255,255,230));g.fillRoundRect((int)ox+6,(int)(oy+hh-22),205,16,6,6);g.setColor(new Color(45,64,82));g.setFont(new Font("Segoe UI",Font.PLAIN,9));g.drawString("© OpenStreetMap contributors",(int)ox+12,(int)(oy+hh-10));}
             if(routes.isEmpty()&&roadNetworkLoaded){g.setColor(new Color(45,64,82));g.setFont(new Font("Segoe UI",Font.PLAIN,12));g.drawString("Road network loaded · click OPTIMIZE ROUTES to calculate fleet routes",(int)ox+15,(int)oy+Math.min(24,(int)hh-8));}g.dispose();}
+        // Draws a complete closed route, following road paths when they are available.
         void drawRoute(Graphics2D g,Route r){if(r.stops.isEmpty())return;List<Node> ns=new ArrayList<>();ns.add(r.depot);ns.addAll(r.stops);ns.add(r.depot);Path2D p=new Path2D.Double();p.moveTo(sx(ns.get(0).x),sy(ns.get(0).y));for(int i=0;i<ns.size()-1;i++){Leg l=optimizer.leg(ns.get(i),ns.get(i+1));if(roadNetworkLoaded&&l.path.size()>1){for(RoadNode rn:l.path)p.lineTo(sx(rn.x),sy(rn.y));}else p.lineTo(sx(ns.get(i+1).x),sy(ns.get(i+1).y));}g.draw(p);}
+        // Finds the nearest customer or depot, ignoring locations beyond the click radius.
         Node nearest(double x,double y){Node best=null;double bd=Double.MAX_VALUE;for(Node n:customers){double d=Math.hypot(n.x-x,n.y-y);if(d<bd){bd=d;best=n;}}for(Node n:depots){double d=Math.hypot(n.x-x,n.y-y);if(d<bd){bd=d;best=n;}}return bd<5?best:null;}
     }
+    // Keeps interactive values within their allowed minimum and maximum.
     private static double clamp(double v,double lo,double hi){return Math.max(lo,Math.min(hi,v));}
 }
